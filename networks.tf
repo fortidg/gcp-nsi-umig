@@ -5,6 +5,7 @@ resource "google_compute_network" "vpc_networks" {
   name                    = each.value.name
   description             = each.value.description
   auto_create_subnetworks = each.value.auto_create_subnetworks
+  mtu                     = lookup(each.value, "mtu", null)
 }
 
 # Subnets

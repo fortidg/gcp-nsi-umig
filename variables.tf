@@ -64,9 +64,9 @@ variable "admin_password" {
 }
 
 variable "fmg" {
-  type = string
+  type        = string
   description = "Will FortiManager be used for this deployment? (true/false)"
-  default = "false"
+  default     = "false"
 }
 
 variable "fmg_ip" {

@@ -75,13 +75,13 @@ output "nsi_manual_commands" {
 output "vpc_peering_info" {
   description = "VPC Peering configuration for NSI demonstration"
   value = {
-    web_to_web2_peering  = google_compute_network_peering.web_to_web2.name
-    web2_to_web_peering  = google_compute_network_peering.web2_to_web.name
-    web_network          = google_compute_network.vpc_networks["web"].name
-    web2_network         = google_compute_network.vpc_networks["web2"].name
-    web_subnet_cidr      = google_compute_subnetwork.subnets["web_central"].ip_cidr_range
-    web2_subnet_cidr     = google_compute_subnetwork.subnets["web2_central"].ip_cidr_range
-    peering_status_info  = "Use 'gcloud compute networks peerings list --network=${google_compute_network.vpc_networks["web"].name}' to verify peering status"
+    web_to_web2_peering = google_compute_network_peering.web_to_web2.name
+    web2_to_web_peering = google_compute_network_peering.web2_to_web.name
+    web_network         = google_compute_network.vpc_networks["web"].name
+    web2_network        = google_compute_network.vpc_networks["web2"].name
+    web_subnet_cidr     = google_compute_subnetwork.subnets["web_central"].ip_cidr_range
+    web2_subnet_cidr    = google_compute_subnetwork.subnets["web2_central"].ip_cidr_range
+    peering_status_info = "Use 'gcloud compute networks peerings list --network=${google_compute_network.vpc_networks["web"].name}' to verify peering status"
   }
 }
 

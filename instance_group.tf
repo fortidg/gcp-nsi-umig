@@ -46,13 +46,16 @@ resource "google_compute_instance" "fortigate_instances" {
     {
       enable-oslogin = "TRUE"
       user-data = templatefile("${path.module}/templates/fortigate-config.tpl", {
-        admin_port = lookup(var.instance_configs, each.key, null) != null ? coalesce(var.instance_configs[each.key].admin_port, var.admin_port) : var.admin_port
-        admin_pass = lookup(var.instance_configs, each.key, null) != null ? coalesce(var.instance_configs[each.key].admin_password, var.admin_password) : var.admin_password
-        fmg_ip     = lookup(var.instance_configs, each.key, null) != null ? coalesce(var.instance_configs[each.key].fmg_ip, var.fmg_ip) : var.fmg_ip
-        fmg        = lookup(var.instance_configs, each.key, null) != null ? coalesce(var.instance_configs[each.key].fmg, var.fmg) : var.fmg
-        flx_tok    = lookup(var.instance_configs, each.key, null) != null ? lookup(var.instance_configs[each.key].custom_metadata, "flx_tok", "") : ""
-        mgmt_gw    = google_compute_subnetwork.subnets["management_central"].gateway_address
-        insp_gw    = google_compute_subnetwork.subnets["inspection_central"].gateway_address
+        admin_port        = try(var.instance_configs[each.key].admin_port, null) != null ? var.instance_configs[each.key].admin_port : var.admin_port
+        admin_pass        = try(var.instance_configs[each.key].admin_password, null) != null ? var.instance_configs[each.key].admin_password : var.admin_password
+        fmg_ip            = try(var.instance_configs[each.key].fmg_ip, null) != null ? var.instance_configs[each.key].fmg_ip : var.fmg_ip
+        fmg               = try(var.instance_configs[each.key].fmg, null) != null ? var.instance_configs[each.key].fmg : var.fmg
+        flx_tok           = try(var.instance_configs[each.key].flx_tok, null) != null ? var.instance_configs[each.key].flx_tok : ""
+        mgmt_gw           = google_compute_subnetwork.subnets["management_central"].gateway_address
+        insp_gw           = google_compute_subnetwork.subnets["inspection_central"].gateway_address
+        ilb_ip            = google_compute_address.ilb_ip.address
+        health_check_port = var.health_check_port
+        frontend_ips      = [for k, v in google_compute_address.ilb_frontend_ips : v.address]
       })
     },
     lookup(var.instance_configs, each.key, null) != null ? var.instance_configs[each.key].custom_metadata : {}

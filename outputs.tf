@@ -101,6 +101,26 @@ output "forwarding_rules" {
   }
 }
 
+output "ilb_ip" {
+  description = "Internal load balancer loopback IP address"
+  value = {
+    id      = google_compute_address.ilb_ip.id
+    name    = google_compute_address.ilb_ip.name
+    address = google_compute_address.ilb_ip.address
+  }
+}
+
+output "ilb_frontend_ips" {
+  description = "Internal load balancer frontend IP addresses"
+  value = {
+    for k, v in google_compute_address.ilb_frontend_ips : k => {
+      id      = v.id
+      name    = v.name
+      address = v.address
+    }
+  }
+}
+
 # Firewall Rules Output
 output "firewall_rules" {
   description = "Created firewall rules"

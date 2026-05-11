@@ -39,7 +39,7 @@ config system interface
         set allowaccess ping https ssh http probe-response
         set type physical
         set mtu-override enable
-        set mtu 1600
+        set mtu 1768
     next
     edit port2
         set vdom root
@@ -49,27 +49,56 @@ config system interface
         set mtu-override enable
         set mtu 1460
     next
+    edit port1-ilb-probe
+        set vdom root
+        set ip ${ilb_ip} 255.255.255.255
+        set allowaccess probe-response
+        set type loopback
+        set secondary-IP enable
+        config secondaryip
+%{ for idx, frontend_ip in frontend_ips ~}
+            edit ${idx + 1}
+                set ip ${frontend_ip} 255.255.255.255
+                set allowaccess probe-response
+            next
+%{ endfor ~}
+        end
+    next
     edit gcp
         set vdom root
         set type geneve
         set snmp-index 9
         set interface port1
         set mtu-override enable
-        set mtu 1522
+        set mtu 1460
+        set tcp-mss 1420
     next
 end
 
-config system httpd
-    set admin-https-pki-required disable
-    set admin-sport ${admin_port}
-    set admin-server-cert Fortinet_Factory
-end
-
 config system probe-response
-    set port 8080
+    set port ${health_check_port}
     set http-probe-value OK
     set mode http-probe
 end
+
+config system affinity-packet-redistribution
+    edit 1
+        set interface port1
+        set affinity-cpumask 0xFF
+    next
+    edit 2
+        set interface port2
+        set affinity-cpumask 0xFF
+    next
+end
+
+config firewall service custom
+    edit ProbeService
+        set comment "Default Probe for GCP on port ${health_check_port}"
+        set tcp-portrange ${health_check_port}
+    next
+end
+
 
 config router static
     edit 1
@@ -112,16 +141,19 @@ config router policy
     next
 end
 
-# Health check configuration
-config system probe-response
-    set mode http-probe
-    set http-probe-value OK
-    set port 8080
-end
-
 # Basic firewall policy for NSI traffic
 config firewall policy
     edit 1
+        set name Allow-ILB-Probe-Port1
+        set srcintf port1
+        set dstintf port1-ilb-probe
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service ProbeService
+    next
+    edit 2
         set name nsi-inspection
         set srcintf port1
         set dstintf port1
@@ -130,7 +162,6 @@ config firewall policy
         set dstaddr all
         set schedule always
         set service ALL
-        set comments NSI traffic inspection
         set inspection-mode flow
         set utm-status enable
     next
@@ -221,7 +252,6 @@ config firewall policy
         set service ALL
         set utm-status enable
         set ssl-ssh-profile custom-cert
-        set webfilter-profile doc-example-webfilter-profile
         set logtraffic all
     next
 end
@@ -236,6 +266,42 @@ config system dns
     set interface port2
     set vrf-select 5
 end
+
+config system affinity-interrupt
+    edit 1
+        set interrupt "eth0-ntfy-block.0"
+        set affinity-cpumask "0x0000000000000001"
+    next
+    edit 2
+        set interrupt "eth0-ntfy-block.1"
+        set affinity-cpumask "0x0000000000000002"
+    next
+    edit 3
+        set interrupt "eth0-ntfy-block.2"
+        set affinity-cpumask "0x0000000000000004"
+    next
+    edit 4
+        set interrupt "eth0-ntfy-block.3"
+        set affinity-cpumask "0x0000000000000008"
+    next
+    edit 5
+        set interrupt "eth1-ntfy-block.0"
+        set affinity-cpumask "0x0000000000000001"
+    next
+    edit 6
+        set interrupt "eth1-ntfy-block.1"
+        set affinity-cpumask "0x0000000000000002"
+    next
+    edit 7
+        set interrupt "eth1-ntfy-block.2"
+        set affinity-cpumask "0x0000000000000004"
+    next
+    edit 8
+        set interrupt "eth1-ntfy-block.3"
+        set affinity-cpumask "0x0000000000000008"
+    next
+end
+
 
 %{ if fmg == "true" }
 --==FGTCONF==

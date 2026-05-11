@@ -47,6 +47,7 @@ locals {
       name                    = "${local.prefix}-fgt-nsi-ib-new"
       description             = "NIS data or traffic VPC network with regional subnets"
       auto_create_subnetworks = false
+      mtu                     = 1768
     }
 
     # Management VPC  
