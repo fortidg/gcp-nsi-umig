@@ -41,6 +41,18 @@ check_variables() {
     
     print_status "Using PROJECT_ID: $PROJECT_ID"
     print_status "Using ORGANIZATION_ID: $ORGANIZATION_ID"
+
+    # Security profiles and profile groups live under the ORGANIZATION, so their
+    # names share one namespace with every other project in the org. Derive them
+    # from PROJECT_ID so parallel deployments cannot collide or silently reuse
+    # each other's profile group. Override with NSI_NAME_PREFIX if needed.
+    NSI_NAME_PREFIX="${NSI_NAME_PREFIX:-$PROJECT_ID}"
+    SECURITY_PROFILE="${NSI_NAME_PREFIX}-ftnt-sp1"
+    SECURITY_PROFILE_GROUP="${NSI_NAME_PREFIX}-ftnt-spg1"
+    SECURITY_PROFILE_GROUP_URI="organizations/$ORGANIZATION_ID/locations/global/securityProfileGroups/$SECURITY_PROFILE_GROUP"
+
+    print_status "Security profile: $SECURITY_PROFILE"
+    print_status "Security profile group: $SECURITY_PROFILE_GROUP"
 }
 
 # Get Terraform outputs
@@ -51,14 +63,33 @@ get_terraform_outputs() {
     WEB_NETWORK=$(terraform output -json vpc_networks | jq -r '.web_vpc.name')
     WEB2_NETWORK=$(terraform output -json vpc_networks | jq -r '.web2_vpc.name')
 
-    FORWARDING_RULE_A=$(terraform output -json forwarding_rules | jq -r '."us-central1-a".name')
-    FORWARDING_RULE_B=$(terraform output -json forwarding_rules | jq -r '."us-central1-b".name')
-    FORWARDING_RULE_C=$(terraform output -json forwarding_rules | jq -r '."us-central1-c".name')
+    # Derive zones and forwarding rule names from the forwarding_rules output rather than
+    # hardcoding them, so the script follows var.region / var.zones for any deployment.
+    FORWARDING_RULES_JSON=$(terraform output -json forwarding_rules)
+
+    ZONES=()
+    while IFS= read -r zone; do
+        ZONES+=("$zone")
+    done < <(jq -r 'keys[]' <<<"$FORWARDING_RULES_JSON")
+
+    if [ ${#ZONES[@]} -eq 0 ]; then
+        print_error "No forwarding rules found in Terraform outputs. Run 'terraform apply' first."
+        exit 1
+    fi
+
+    # The forwarding rule id looks like projects/<p>/regions/<region>/forwardingRules/<name>
+    REGION=$(jq -r 'to_entries[0].value.id | split("/")[3]' <<<"$FORWARDING_RULES_JSON")
 
     print_status "Inspection Network: $INSPECTION_NETWORK"
     print_status "Web Network: $WEB_NETWORK"
     print_status "Web2 Network: $WEB2_NETWORK"
-    print_status "Forwarding Rules: $FORWARDING_RULE_A, $FORWARDING_RULE_B, $FORWARDING_RULE_C"
+    print_status "Region: $REGION"
+    print_status "Zones: ${ZONES[*]}"
+}
+
+# Look up the forwarding rule name for a zone
+forwarding_rule_for_zone() {
+    jq -r --arg zone "$1" '.[$zone].name' <<<"$FORWARDING_RULES_JSON"
 }
 
 # Create NSI resources
@@ -73,37 +104,28 @@ create_nsi_resources() {
     }
     
     print_step "2. Creating intercept deployments for each zone..."
-    
-    gcloud beta network-security intercept-deployments create fgt-nsi-us-central1a \
-        --location=us-central1-a \
-        --project="$PROJECT_ID" \
-        --forwarding-rule="$FORWARDING_RULE_A" \
-        --intercept-deployment-group="projects/$PROJECT_ID/locations/global/interceptDeploymentGroups/newfgt-nsi-ftnt-dg" \
-        --forwarding-rule-location=us-central1 \
-        --no-async || {
-        print_warning "Intercept deployment us-central1a may already exist, continuing..."
-    }
-    
-    gcloud beta network-security intercept-deployments create fgt-nsi-us-central1b \
-        --location=us-central1-b \
-        --project="$PROJECT_ID" \
-        --forwarding-rule="$FORWARDING_RULE_B" \
-        --intercept-deployment-group="projects/$PROJECT_ID/locations/global/interceptDeploymentGroups/newfgt-nsi-ftnt-dg" \
-        --forwarding-rule-location=us-central1 \
-        --no-async || {
-        print_warning "Intercept deployment us-central1b may already exist, continuing..."
-    }
-    
-    gcloud beta network-security intercept-deployments create fgt-nsi-us-central1c1 \
-        --location=us-central1-c \
-        --project="$PROJECT_ID" \
-        --forwarding-rule="$FORWARDING_RULE_C" \
-        --intercept-deployment-group="projects/$PROJECT_ID/locations/global/interceptDeploymentGroups/newfgt-nsi-ftnt-dg" \
-        --forwarding-rule-location=us-central1 \
-        --no-async || {
-        print_warning "Intercept deployment us-central1c may already exist, continuing..."
-    }
-    
+
+    for zone in "${ZONES[@]}"; do
+        deployment_name="fgt-nsi-${zone//-/}"
+        forwarding_rule=$(forwarding_rule_for_zone "$zone")
+
+        if [ -z "$forwarding_rule" ] || [ "$forwarding_rule" = "null" ]; then
+            print_error "No forwarding rule found for zone $zone"
+            exit 1
+        fi
+
+        print_status "Creating $deployment_name in $zone (forwarding rule: $forwarding_rule)"
+        gcloud beta network-security intercept-deployments create "$deployment_name" \
+            --location="$zone" \
+            --project="$PROJECT_ID" \
+            --forwarding-rule="$forwarding_rule" \
+            --intercept-deployment-group="projects/$PROJECT_ID/locations/global/interceptDeploymentGroups/newfgt-nsi-ftnt-dg" \
+            --forwarding-rule-location="$REGION" \
+            --no-async || {
+            print_warning "Intercept deployment $deployment_name may already exist, continuing..."
+        }
+    done
+
     print_step "3. Creating intercept endpoint group..."
     gcloud beta network-security intercept-endpoint-groups create newfgt-nsi-ftnt-epg \
         --intercept-deployment-group newfgt-nsi-ftnt-dg \
@@ -136,21 +158,21 @@ create_nsi_resources() {
     }
     
     print_step "5. Creating security profile..."
-    gcloud beta network-security security-profiles custom-intercept create newfgt-nsi-ftnt-sp1 \
+    gcloud beta network-security security-profiles custom-intercept create "$SECURITY_PROFILE" \
         --intercept-endpoint-group newfgt-nsi-ftnt-epg \
         --billing-project "$PROJECT_ID" \
         --organization "$ORGANIZATION_ID" \
         --location global || {
-        print_warning "Security profile may already exist, continuing..."
+        print_warning "Security profile $SECURITY_PROFILE may already exist, continuing..."
     }
-    
+
     print_step "6. Creating security profile group..."
-    gcloud beta network-security security-profile-groups create newfgt-nsi-ftnt-spg1 \
-        --custom-intercept-profile newfgt-nsi-ftnt-sp1 \
+    gcloud beta network-security security-profile-groups create "$SECURITY_PROFILE_GROUP" \
+        --custom-intercept-profile "$SECURITY_PROFILE" \
         --billing-project "$PROJECT_ID" \
         --organization "$ORGANIZATION_ID" \
         --location global || {
-        print_warning "Security profile group may already exist, continuing..."
+        print_warning "Security profile group $SECURITY_PROFILE_GROUP may already exist, continuing..."
     }
     
     print_step "7. Creating firewall policy..."
@@ -165,7 +187,8 @@ create_nsi_resources() {
         --action=APPLY_SECURITY_PROFILE_GROUP \
         --firewall-policy newfgt-nsi \
         --global-firewall-policy \
-        --security-profile-group "organizations/$ORGANIZATION_ID/locations/global/securityProfileGroups/newfgt-nsi-ftnt-spg1" \
+        --project "$PROJECT_ID" \
+        --security-profile-group "$SECURITY_PROFILE_GROUP_URI" \
         --layer4-configs all \
         --src-ip-ranges 0.0.0.0/0 \
         --dest-ip-ranges 0.0.0.0/0 \
@@ -177,7 +200,8 @@ create_nsi_resources() {
         --action=APPLY_SECURITY_PROFILE_GROUP \
         --firewall-policy newfgt-nsi \
         --global-firewall-policy \
-        --security-profile-group "organizations/$ORGANIZATION_ID/locations/global/securityProfileGroups/newfgt-nsi-ftnt-spg1" \
+        --project "$PROJECT_ID" \
+        --security-profile-group "$SECURITY_PROFILE_GROUP_URI" \
         --layer4-configs all \
         --src-ip-ranges 0.0.0.0/0 \
         --dest-ip-ranges 0.0.0.0/0 \

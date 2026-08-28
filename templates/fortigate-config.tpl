@@ -116,12 +116,23 @@ config router static
         set device port1
     next
     edit 4
+        set dst 10.0.0.0 255.0.0.0
         set distance 5
         set device gcp
     next
     edit 5
         set gateway ${insp_gw}
         set device port1
+    next
+    edit 6
+        set dst 172.16.0.0 255.240.0.0
+        set distance 5
+        set device gcp
+    next
+    edit 7
+        set dst 192.168.0.0 255.255.0.0
+        set distance 5
+        set device gcp
     next
 end
 

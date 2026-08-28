@@ -34,7 +34,7 @@ This deployment creates:
 - **Firewall Policy Association**: Policy association with the web VPC
 
 ### Test Infrastructure  
-- **Web Server VMs**: Windows Server 2025 instances across three zones for testing NSI functionality
+- **Web Server VMs**: Debian 12 instances across three zones for testing NSI functionality, preloaded with Apache and iperf3
 
 ### Security
 - **Firewall Rules**: Allow all ingress/egress traffic on all VPCs plus health check rules

@@ -121,6 +121,21 @@ output "ilb_frontend_ips" {
   }
 }
 
+# Cloud NAT Output
+output "inspection_nat" {
+  description = "Cloud Router and NAT gateway providing internet egress for FortiGate port1"
+  value = {
+    router_name = google_compute_router.inspection_nat_router.name
+    router_id   = google_compute_router.inspection_nat_router.id
+    nat_name    = google_compute_router_nat.inspection_nat.name
+    network     = google_compute_network.vpc_networks["inspection"].name
+    region      = var.region
+    # NAT addresses are Google-allocated (AUTO_ONLY), so they are not known to
+    # Terraform. Query them once the gateway is up:
+    nat_ips_command = "gcloud compute routers get-nat-mapping-info ${google_compute_router.inspection_nat_router.name} --region ${var.region} --project ${var.project_id}"
+  }
+}
+
 # Firewall Rules Output
 output "firewall_rules" {
   description = "Created firewall rules"
@@ -203,15 +218,15 @@ output "nsi_deployment_instructions" {
       --no-async
     
     5. Create security profile:
-    gcloud beta network-security security-profiles custom-intercept create newfgt-nsi-ftnt-sp1 \
+    gcloud beta network-security security-profiles custom-intercept create ${local.security_profile} \
       --intercept-endpoint-group newfgt-nsi-ftnt-epg \
       --billing-project ${var.project_id} \
       --organization ${var.organization_id} \
       --location global
     
     6. Create security profile group:
-    gcloud beta network-security security-profile-groups create newfgt-nsi-ftnt-spg1 \
-      --custom-intercept-profile newfgt-nsi-ftnt-sp1 \
+    gcloud beta network-security security-profile-groups create ${local.security_profile_group} \
+      --custom-intercept-profile ${local.security_profile} \
       --billing-project ${var.project_id} \
       --organization ${var.organization_id} \
       --location global
@@ -226,7 +241,7 @@ output "nsi_deployment_instructions" {
       --action=APPLY_SECURITY_PROFILE_GROUP \
       --firewall-policy newfgt-nsi \
       --global-firewall-policy \
-      --security-profile-group organizations/${var.organization_id}/locations/global/securityProfileGroups/newfgt-nsi-ftnt-spg1 \
+      --security-profile-group ${local.security_profile_group_uri} \
       --layer4-configs all \
       --src-ip-ranges 0.0.0.0/0 \
       --dest-ip-ranges 0.0.0.0/0 \
@@ -236,7 +251,7 @@ output "nsi_deployment_instructions" {
       --action=APPLY_SECURITY_PROFILE_GROUP \
       --firewall-policy newfgt-nsi \
       --global-firewall-policy \
-      --security-profile-group organizations/${var.organization_id}/locations/global/securityProfileGroups/newfgt-nsi-ftnt-spg1 \
+      --security-profile-group ${local.security_profile_group_uri} \
       --layer4-configs all \
       --src-ip-ranges 0.0.0.0/0 \
       --dest-ip-ranges 0.0.0.0/0 \

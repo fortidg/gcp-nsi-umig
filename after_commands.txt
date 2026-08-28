@@ -1,97 +1,125 @@
-       After Terraform deployment is complete, run the following gcloud commands to enable NSI:
-            
-        1. Create the intercept deployment group:
-        gcloud beta network-security intercept-deployment-groups create newfgt-nsi-ftnt-dg \
-          --location global \
-          --project cse-us-341516 \
-          --network fgt-nsi-fgt-nsi-ib-new \
-          --no-async
-            
-        2. Create intercept deployments for each zone:
-        gcloud beta network-security intercept-deployments create fgt-nsi-us-central1a \
-          --location=us-central1-a \
-          --project=cse-us-341516 \
-          --forwarding-rule=fgt-us-central1a \
-          --intercept-deployment-group=projects/cse-us-341516/locations/global/interceptDeploymentGroups/newfgt-nsi-ftnt-dg \
-          --forwarding-rule-location=us-central1 \
-          --no-async
-            
-        gcloud beta network-security intercept-deployments create fgt-nsi-us-central1b \
-          --location=us-central1-b \
-          --project=cse-us-341516 \
-          --forwarding-rule=fgt-us-central1b \
-          --intercept-deployment-group=projects/cse-us-341516/locations/global/interceptDeploymentGroups/newfgt-nsi-ftnt-dg \
-          --forwarding-rule-location=us-central1 \
-          --no-async
-            
-        gcloud beta network-security intercept-deployments create fgt-nsi-us-central1c1 \
-          --location=us-central1-c \
-          --project=cse-us-341516 \
-          --forwarding-rule=fgt-us-central1c1 \
-          --intercept-deployment-group=projects/cse-us-341516/locations/global/interceptDeploymentGroups/newfgt-nsi-ftnt-dg \
-          --forwarding-rule-location=us-central1 \
-          --no-async
-            
-        3. Create intercept endpoint group:
-        gcloud beta network-security intercept-endpoint-groups create newfgt-nsi-ftnt-epg \
-          --intercept-deployment-group newfgt-nsi-ftnt-dg \
-          --project cse-us-341516 \
-          --location global \
-          --no-async
-            
-        4. Associate endpoint group with web VPC:
-        gcloud beta network-security intercept-endpoint-group-associations create new-fgt-nsi-ftnt-epg-assoc \
-          --intercept-endpoint-group newfgt-nsi-ftnt-epg \
-          --network fgt-nsi-fgt-nsi-ib-new-web \
-          --project cse-us-341516 \
-          --location global \
-          --no-async
-            
-        5. Create security profile:
-        gcloud beta network-security security-profiles custom-intercept create newfgt-nsi-ftnt-sp1 \
-          --intercept-endpoint-group newfgt-nsi-ftnt-epg \
-          --billing-project cse-us-341516 \
-          --organization 529833491623 \
-          --location global
-            
-        6. Create security profile group:
-        gcloud beta network-security security-profile-groups create newfgt-nsi-ftnt-spg1 \
-          --custom-intercept-profile newfgt-nsi-ftnt-sp1 \
-          --billing-project cse-us-341516 \
-          --organization 529833491623 \
-          --location global
-            
-        7. Create firewall policy:
-        gcloud compute network-firewall-policies create newfgt-nsi \
-          --project cse-us-341516 \
-          --global
-            
-        8. Create firewall policy rules:
-        gcloud beta compute network-firewall-policies rules create 10 \
-          --action=APPLY_SECURITY_PROFILE_GROUP \
-          --firewall-policy newfgt-nsi \
-          --global-firewall-policy \
-          --security-profile-group organizations/529833491623/locations/global/securityProfileGroups/newfgt-nsi-ftnt-spg1 \
-          --layer4-configs all \
-          --src-ip-ranges 0.0.0.0/0 \
-          --dest-ip-ranges 0.0.0.0/0 \
-          --direction INGRESS
-            
-        gcloud beta compute network-firewall-policies rules create 11 \
-          --action=APPLY_SECURITY_PROFILE_GROUP \
-          --firewall-policy newfgt-nsi \
-          --global-firewall-policy \
-          --security-profile-group organizations/529833491623/locations/global/securityProfileGroups/newfgt-nsi-ftnt-spg1 \
-          --layer4-configs all \
-          --src-ip-ranges 0.0.0.0/0 \
-          --dest-ip-ranges 0.0.0.0/0 \
-          --direction EGRESS
-            
-        9. Associate policy with web VPC:
-        gcloud compute network-firewall-policies associations create \
-          --name newfgt-nsi-policy-assoc \
-          --global-firewall-policy \
-          --firewall-policy newfgt-nsi \
-          --network fgt-nsi-fgt-nsi-ib-new-web \
-          --project cse-us-341516
-    EOT
+After Terraform deployment is complete, run the following gcloud commands to enable NSI.
+
+These are the equivalent of what ./setup-nsi.sh does automatically, and are recorded
+here for reference. Prefer running the script:
+
+    export PROJECT_ID=dgooch-fortiedr-demo
+    export ORGANIZATION_ID=769491663990
+    ./setup-nsi.sh
+
+To regenerate this file for a different deployment:
+
+    terraform output -raw nsi_deployment_instructions > after_commands.txt
+
+The values below reflect the current terraform.tfvars: project dgooch-fortiedr-demo,
+organization 769491663990, region us-east1, zones us-east1-b and us-east1-c.
+
+Note that the security profile and profile group are ORGANIZATION-scoped, so their
+names are prefixed with the project id to avoid colliding with other projects in the
+same organization.
+
+1. Create the intercept deployment group:
+gcloud beta network-security intercept-deployment-groups create newfgt-nsi-ftnt-dg \
+  --location global \
+  --project dgooch-fortiedr-demo \
+  --network fgt-nsi-fgt-nsi-ib-new \
+  --no-async
+
+2. Create intercept deployments for each zone:
+gcloud beta network-security intercept-deployments create fgt-nsi-useast1b \
+  --location=us-east1-b \
+  --project=dgooch-fortiedr-demo \
+  --forwarding-rule=fgt-useast1b \
+  --intercept-deployment-group=projects/dgooch-fortiedr-demo/locations/global/interceptDeploymentGroups/newfgt-nsi-ftnt-dg \
+  --forwarding-rule-location=us-east1 \
+  --no-async
+
+gcloud beta network-security intercept-deployments create fgt-nsi-useast1c \
+  --location=us-east1-c \
+  --project=dgooch-fortiedr-demo \
+  --forwarding-rule=fgt-useast1c \
+  --intercept-deployment-group=projects/dgooch-fortiedr-demo/locations/global/interceptDeploymentGroups/newfgt-nsi-ftnt-dg \
+  --forwarding-rule-location=us-east1 \
+  --no-async
+
+3. Create intercept endpoint group:
+gcloud beta network-security intercept-endpoint-groups create newfgt-nsi-ftnt-epg \
+  --intercept-deployment-group newfgt-nsi-ftnt-dg \
+  --project dgooch-fortiedr-demo \
+  --location global \
+  --no-async
+
+4. Associate endpoint group with both web VPCs:
+gcloud beta network-security intercept-endpoint-group-associations create new-fgt-nsi-ftnt-epg-assoc \
+  --intercept-endpoint-group newfgt-nsi-ftnt-epg \
+  --network fgt-nsi-fgt-nsi-ib-new-web \
+  --project dgooch-fortiedr-demo \
+  --location global \
+  --no-async
+
+gcloud beta network-security intercept-endpoint-group-associations create new-fgt-nsi-ftnt-epg-assoc-web2 \
+  --intercept-endpoint-group newfgt-nsi-ftnt-epg \
+  --network fgt-nsi-fgt-nsi-ib-new-web2 \
+  --project dgooch-fortiedr-demo \
+  --location global \
+  --no-async
+
+5. Create security profile:
+gcloud beta network-security security-profiles custom-intercept create dgooch-fortiedr-demo-ftnt-sp1 \
+  --intercept-endpoint-group newfgt-nsi-ftnt-epg \
+  --billing-project dgooch-fortiedr-demo \
+  --organization 769491663990 \
+  --location global
+
+6. Create security profile group:
+gcloud beta network-security security-profile-groups create dgooch-fortiedr-demo-ftnt-spg1 \
+  --custom-intercept-profile dgooch-fortiedr-demo-ftnt-sp1 \
+  --billing-project dgooch-fortiedr-demo \
+  --organization 769491663990 \
+  --location global
+
+7. Create firewall policy:
+gcloud compute network-firewall-policies create newfgt-nsi \
+  --project dgooch-fortiedr-demo \
+  --global
+
+8. Create firewall policy rules:
+gcloud beta compute network-firewall-policies rules create 10 \
+  --action=APPLY_SECURITY_PROFILE_GROUP \
+  --firewall-policy newfgt-nsi \
+  --global-firewall-policy \
+  --project dgooch-fortiedr-demo \
+  --security-profile-group organizations/769491663990/locations/global/securityProfileGroups/dgooch-fortiedr-demo-ftnt-spg1 \
+  --layer4-configs all \
+  --src-ip-ranges 0.0.0.0/0 \
+  --dest-ip-ranges 0.0.0.0/0 \
+  --direction INGRESS
+
+gcloud beta compute network-firewall-policies rules create 11 \
+  --action=APPLY_SECURITY_PROFILE_GROUP \
+  --firewall-policy newfgt-nsi \
+  --global-firewall-policy \
+  --project dgooch-fortiedr-demo \
+  --security-profile-group organizations/769491663990/locations/global/securityProfileGroups/dgooch-fortiedr-demo-ftnt-spg1 \
+  --layer4-configs all \
+  --src-ip-ranges 0.0.0.0/0 \
+  --dest-ip-ranges 0.0.0.0/0 \
+  --direction EGRESS
+
+9. Associate policy with both web VPCs:
+gcloud compute network-firewall-policies associations create \
+  --name newfgt-nsi-policy-assoc \
+  --global-firewall-policy \
+  --firewall-policy newfgt-nsi \
+  --network fgt-nsi-fgt-nsi-ib-new-web \
+  --project dgooch-fortiedr-demo
+
+gcloud compute network-firewall-policies associations create \
+  --name newfgt-nsi-policy-assoc-web2 \
+  --global-firewall-policy \
+  --firewall-policy newfgt-nsi \
+  --network fgt-nsi-fgt-nsi-ib-new-web2 \
+  --project dgooch-fortiedr-demo
+
+To tear all of this down before 'terraform destroy', run ./cleanup-nsi.sh with the
+same PROJECT_ID and ORGANIZATION_ID.

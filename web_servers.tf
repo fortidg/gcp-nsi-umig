@@ -8,8 +8,8 @@ resource "google_compute_instance" "web_servers" {
 
   boot_disk {
     initialize_params {
-      image = "projects/windows-cloud/global/images/family/windows-2025"
-      size  = 50
+      image = "projects/debian-cloud/global/images/family/debian-12"
+      size  = 20
       type  = "pd-balanced"
     }
     auto_delete = true
@@ -24,31 +24,90 @@ resource "google_compute_instance" "web_servers" {
     }
   }
 
-  # Windows license and metadata
+  # Startup script to install iperf3 and apache2
   metadata = {
-    enable-oslogin = "FALSE"
-    # Add your Windows license key here if needed
-    # windows-keys = "your-windows-key-here"
+    enable-oslogin = "TRUE"
+    startup-script = <<-EOF
+      #!/bin/bash
+      set -e
+
+      # Log output to file
+      exec > >(tee -a /var/log/startup-script.log)
+      exec 2>&1
+
+      echo "Starting startup script at $(date)"
+
+      # Update package list
+      apt-get update
+
+      # Install packages with proper error handling
+      DEBIAN_FRONTEND=noninteractive apt-get install -y iperf3 apache2
+
+      # Wait for Apache2 to be fully installed
+      sleep 5
+
+      # Create a simple index page with hostname
+      cat > /var/www/html/index.html <<HTML_EOF
+      <!DOCTYPE html>
+      <html>
+      <head><title>NSI Test Server</title></head>
+      <body>
+        <h1>NSI Test Server - $(hostname)</h1>
+        <p>Zone: ${each.key}</p>
+        <p>Server Time: $(date)</p>
+      </body>
+      </html>
+      HTML_EOF
+
+      # Configure iperf3 as a service
+      cat > /etc/systemd/system/iperf3.service <<'IPERF_EOF'
+      [Unit]
+      Description=iPerf3 Server
+      After=network.target
+
+      [Service]
+      Type=simple
+      ExecStart=/usr/bin/iperf3 -s
+      Restart=always
+      RestartSec=5
+
+      [Install]
+      WantedBy=multi-user.target
+      IPERF_EOF
+
+      # Reload systemd and start services
+      systemctl daemon-reload
+
+      # Enable and start iperf3
+      systemctl enable iperf3
+      systemctl start iperf3
+
+      # Enable and restart apache2 to ensure clean start
+      systemctl enable apache2
+      systemctl restart apache2
+
+      # Verify services are running
+      sleep 2
+      systemctl is-active --quiet apache2 && echo "Apache2 is running" || echo "Apache2 failed to start"
+      systemctl is-active --quiet iperf3 && echo "iPerf3 is running" || echo "iPerf3 failed to start"
+
+      echo "Startup script completed at $(date)"
+    EOF
   }
 
-  # Allow HTTP/HTTPS traffic
-  tags = ["web-server", "allow-http-https"]
-
-  # Prevent accidental deletion
-  lifecycle {
-    create_before_destroy = true
-  }
+  # Allow HTTP/HTTPS and SSH traffic
+  tags = ["web-server", "allow-https-ssh"]
 }
 
 # Additional firewall rules for web servers
 resource "google_compute_firewall" "web_server_firewall" {
   name        = "${local.prefix}-web-server-allow"
   network     = google_compute_network.vpc_networks["web"].id
-  description = "Allow HTTP, HTTPS, and RDP to web servers"
+  description = "Allow HTTP, HTTPS, SSH, and iperf3 to web servers"
 
   allow {
     protocol = "tcp"
-    ports    = ["80", "443", "3389"]
+    ports    = ["22", "443", "5201"]
   }
 
   allow {
@@ -56,5 +115,5 @@ resource "google_compute_firewall" "web_server_firewall" {
   }
 
   source_ranges = ["0.0.0.0/0"]
-  target_tags   = ["web-server"]
+  target_tags   = ["web-server", "allow-https-ssh"]
 }

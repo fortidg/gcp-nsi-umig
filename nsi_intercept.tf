@@ -38,6 +38,18 @@
 #   --location global \
 #   --no-async
 
+locals {
+  # Security profiles and profile groups are ORGANIZATION-scoped, so their names
+  # share a single namespace with every other project in the org. Derive them from
+  # project_id so parallel deployments cannot collide or silently reuse each
+  # other's profile group. Must match NSI_NAME_PREFIX in setup-nsi.sh, which
+  # defaults to PROJECT_ID.
+  nsi_name_prefix            = var.project_id
+  security_profile           = "${local.nsi_name_prefix}-ftnt-sp1"
+  security_profile_group     = "${local.nsi_name_prefix}-ftnt-spg1"
+  security_profile_group_uri = "organizations/${var.organization_id}/locations/global/securityProfileGroups/${local.security_profile_group}"
+}
+
 # Output values for reference after manual creation
 output "nsi_manual_commands" {
   description = "Manual gcloud commands needed to complete NSI setup"
@@ -54,15 +66,15 @@ output "nsi_manual_commands" {
 
     endpoint_group_association_web2 = "gcloud beta network-security intercept-endpoint-group-associations create new-fgt-nsi-ftnt-epg-assoc-web2 --intercept-endpoint-group newfgt-nsi-ftnt-epg --network ${google_compute_network.vpc_networks["web2"].name} --project ${var.project_id} --location global --no-async"
 
-    security_profile = "gcloud beta network-security security-profiles custom-intercept create newfgt-nsi-ftnt-sp1 --intercept-endpoint-group newfgt-nsi-ftnt-epg --billing-project ${var.project_id} --organization ${var.organization_id} --location global"
+    security_profile = "gcloud beta network-security security-profiles custom-intercept create ${local.security_profile} --intercept-endpoint-group newfgt-nsi-ftnt-epg --billing-project ${var.project_id} --organization ${var.organization_id} --location global"
 
-    security_profile_group = "gcloud beta network-security security-profile-groups create newfgt-nsi-ftnt-spg1 --custom-intercept-profile newfgt-nsi-ftnt-sp1 --billing-project ${var.project_id} --organization ${var.organization_id} --location global"
+    security_profile_group = "gcloud beta network-security security-profile-groups create ${local.security_profile_group} --custom-intercept-profile ${local.security_profile} --billing-project ${var.project_id} --organization ${var.organization_id} --location global"
 
     firewall_policy = "gcloud compute network-firewall-policies create newfgt-nsi --project ${var.project_id} --global"
 
     firewall_policy_rules = {
-      ingress = "gcloud beta compute network-firewall-policies rules create 10 --action=APPLY_SECURITY_PROFILE_GROUP --firewall-policy newfgt-nsi --global-firewall-policy --security-profile-group organizations/${var.organization_id}/locations/global/securityProfileGroups/newfgt-nsi-ftnt-spg1 --layer4-configs all --src-ip-ranges 0.0.0.0/0 --dest-ip-ranges 0.0.0.0/0 --direction INGRESS"
-      egress  = "gcloud beta compute network-firewall-policies rules create 11 --action=APPLY_SECURITY_PROFILE_GROUP --firewall-policy newfgt-nsi --global-firewall-policy --security-profile-group organizations/${var.organization_id}/locations/global/securityProfileGroups/newfgt-nsi-ftnt-spg1 --layer4-configs all --src-ip-ranges 0.0.0.0/0 --dest-ip-ranges 0.0.0.0/0 --direction EGRESS"
+      ingress = "gcloud beta compute network-firewall-policies rules create 10 --action=APPLY_SECURITY_PROFILE_GROUP --firewall-policy newfgt-nsi --global-firewall-policy --security-profile-group ${local.security_profile_group_uri} --layer4-configs all --src-ip-ranges 0.0.0.0/0 --dest-ip-ranges 0.0.0.0/0 --direction INGRESS"
+      egress  = "gcloud beta compute network-firewall-policies rules create 11 --action=APPLY_SECURITY_PROFILE_GROUP --firewall-policy newfgt-nsi --global-firewall-policy --security-profile-group ${local.security_profile_group_uri} --layer4-configs all --src-ip-ranges 0.0.0.0/0 --dest-ip-ranges 0.0.0.0/0 --direction EGRESS"
     }
 
     firewall_policy_association_web = "gcloud compute network-firewall-policies associations create --name newfgt-nsi-policy-assoc --global-firewall-policy --firewall-policy newfgt-nsi --network ${google_compute_network.vpc_networks["web"].name} --project ${var.project_id}"

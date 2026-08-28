@@ -28,7 +28,7 @@ Inspection VPC (10.50.160.0/24)
          │                  │
     Web VPC ◄──Peering──► Web2 VPC
  (10.12.0.0/24)        (10.13.0.0/24)
-    3 Windows VMs        3 Windows VMs
+    3 Debian VMs         3 Debian VMs
 ```
 
 **Note:** This deployment uses **Unmanaged Instance Groups** for more control over individual FortiGate instances. See [UNMANAGED_INSTANCE_GROUP.md](UNMANAGED_INSTANCE_GROUP.md) for details.
@@ -76,7 +76,7 @@ terraform apply
 - ✅ 3 FortiGate instances (one per zone)
 - ✅ 3 Unmanaged Instance Groups (one per zone, containing one FortiGate each)
 - ✅ Internal Load Balancer with 3 forwarding rules
-- ✅ 6 Windows Server VMs (3 in Web VPC, 3 in Web2 VPC)
+- ✅ 6 Debian 12 VMs with Apache + iperf3 (3 in Web VPC, 3 in Web2 VPC)
 - ✅ Firewall rules for all VPCs
 - ✅ Health checks
 
@@ -162,22 +162,29 @@ echo "Web VPC VM: $WEB_VM_IP"
 echo "Web2 VPC VM: $WEB2_VM_IP"
 ```
 
-### Test 2: RDP to VMs and Test Connectivity
+### Test 2: SSH to VMs and Test Connectivity
 
 ```bash
-# Get external IPs for RDP access
+# Get external IPs for SSH access
 terraform output web_servers
 terraform output web2_servers
 
-# RDP to a Web VPC VM, then ping Web2 VPC VM
-# Open PowerShell in the Windows VM:
+# SSH to a Web VPC VM, then reach the Web2 VPC VM
+gcloud compute ssh fgt-nsi-web-us-central1a --zone=us-central1-a
 ping <WEB2_VM_IP>
-Test-NetConnection <WEB2_VM_IP> -Port 3389
+curl http://<WEB2_VM_IP>          # Apache test page
+iperf3 -c <WEB2_VM_IP>            # Throughput through the inspection path
 
-# RDP to a Web2 VPC VM, then ping Web VPC VM
+# SSH to a Web2 VPC VM, then reach the Web VPC VM
+gcloud compute ssh fgt-nsi-web2-us-central1a --zone=us-central1-a
 ping <WEB_VM_IP>
-Test-NetConnection <WEB_VM_IP> -Port 3389
+curl http://<WEB_VM_IP>
+iperf3 -c <WEB_VM_IP>
 ```
+
+**Note:** The startup script installs Apache and an `iperf3` server unit on every web VM.
+If a test fails right after deployment, check `/var/log/startup-script.log` on the VM to
+confirm the script finished.
 
 ### Test 3: View Traffic in FortiGate
 

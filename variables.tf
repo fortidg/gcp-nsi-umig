@@ -47,6 +47,7 @@ variable "fortigate_instance_count" {
 variable "zones" {
   description = "List of zones for distributing FortiGate instances"
   type        = list(string)
+  default     = ["us-central1-a", "us-central1-b", "us-central1-c"]
 }
 
 # FortiGate Admin Configuration
@@ -98,6 +99,22 @@ variable "web2_subnet_cidr" {
   description = "CIDR range for second web subnet"
   type        = string
   default     = "10.13.0.0/24"
+}
+
+# Cloud NAT Configuration (inspection VPC / FortiGate port1 egress)
+# Both default to prefix-derived names. Override them to match resources that
+# already exist so they can be adopted with 'terraform import' instead of
+# being recreated.
+variable "nat_router_name" {
+  description = "Name of the Cloud Router for the inspection VPC NAT. Defaults to <prefix>-inspection-nat-router."
+  type        = string
+  default     = null
+}
+
+variable "nat_gateway_name" {
+  description = "Name of the Cloud NAT gateway on the inspection VPC. Defaults to <prefix>-inspection-nat-gw."
+  type        = string
+  default     = null
 }
 
 # Load Balancer Configuration

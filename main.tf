@@ -40,6 +40,11 @@ locals {
   # Common naming prefix
   prefix = var.prefix
 
+  # Cloud NAT for the inspection VPC (FortiGate port1). Overridable so an
+  # already-created router/gateway can be imported under its existing name.
+  nat_router_name  = coalesce(var.nat_router_name, "${local.prefix}-inspection-nat-router")
+  nat_gateway_name = coalesce(var.nat_gateway_name, "${local.prefix}-inspection-nat-gw")
+
   # Network configurations based on gcloud commands
   vpc_networks = {
     # Data/Traffic inspection VPC

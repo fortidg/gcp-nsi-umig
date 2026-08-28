@@ -27,7 +27,7 @@ This configuration demonstrates Network Security Intelligence (NSI) traffic insp
   │   Web VPC       │◄─────┤  VPC Peering    ├──────►│  Web2 VPC   │
   │  (10.12.0.0/24) │      └─────────────────┘       │(10.13.0.0/24)│
   │                 │                                 │              │
-  │ - 3 Windows VMs │                                 │- 3 Windows VMs│
+  │ - 3 Debian VMs  │                                 │- 3 Debian VMs │
   │   (zones a,b,c) │                                 │  (zones a,b,c)│
   └─────────────────┘                                 └──────────────┘
 ```
@@ -41,6 +41,9 @@ This configuration demonstrates Network Security Intelligence (NSI) traffic insp
   - FortiGate MIG with 3 instances
   - Internal load balancer
   - NSI Intercept Deployment Group
+  - Cloud Router + Cloud NAT (`fgt-nsi-inspection-nat-router` / `fgt-nsi-inspection-nat-gw`)
+    providing internet egress for FortiGate **port1**, which has no external IP.
+    Required for FortiGuard, DNS, and licensing traffic.
 
 ### 2. Management VPC (`fgt-nsi-fgt-nsi-ib-new-mgmt`)
 - **CIDR**: 10.50.180.0/24
@@ -51,15 +54,15 @@ This configuration demonstrates Network Security Intelligence (NSI) traffic insp
 - **CIDR**: 10.12.0.0/24
 - **Purpose**: First workload VPC with web servers
 - **Resources**:
-  - 3 Windows Server 2025 instances
-  - HTTP/HTTPS/RDP access enabled
+  - 3 Debian 12 instances (Apache + iperf3)
+  - HTTP/HTTPS/SSH access enabled
 
 ### 4. Web2 VPC (`fgt-nsi-fgt-nsi-ib-new-web2`)
 - **CIDR**: 10.13.0.0/24
 - **Purpose**: Second workload VPC for demonstrating NSI between VPCs
 - **Resources**:
-  - 3 Windows Server 2025 instances
-  - HTTP/HTTPS/RDP access enabled
+  - 3 Debian 12 instances (Apache + iperf3)
+  - HTTP/HTTPS/SSH access enabled
 - **Peering**: Bidirectional peering with Web VPC
 
 ## VPC Peering Configuration
@@ -129,15 +132,15 @@ gcloud beta network-security intercept-endpoint-group-associations create new-fg
 ### 5. Create Security Profile and Profile Group
 ```bash
 # Security Profile
-gcloud beta network-security security-profiles custom-intercept create newfgt-nsi-ftnt-sp1 \
+gcloud beta network-security security-profiles custom-intercept create <project-id>-ftnt-sp1 \
   --intercept-endpoint-group newfgt-nsi-ftnt-epg \
   --billing-project <project-id> \
   --organization <org-id> \
   --location global
 
 # Security Profile Group
-gcloud beta network-security security-profile-groups create newfgt-nsi-ftnt-spg1 \
-  --custom-intercept-profile newfgt-nsi-ftnt-sp1 \
+gcloud beta network-security security-profile-groups create <project-id>-ftnt-spg1 \
+  --custom-intercept-profile <project-id>-ftnt-sp1 \
   --billing-project <project-id> \
   --organization <org-id> \
   --location global
@@ -155,7 +158,7 @@ gcloud beta compute network-firewall-policies rules create 10 \
   --action=APPLY_SECURITY_PROFILE_GROUP \
   --firewall-policy newfgt-nsi \
   --global-firewall-policy \
-  --security-profile-group organizations/<org-id>/locations/global/securityProfileGroups/newfgt-nsi-ftnt-spg1 \
+  --security-profile-group organizations/<org-id>/locations/global/securityProfileGroups/<project-id>-ftnt-spg1 \
   --layer4-configs all \
   --src-ip-ranges 0.0.0.0/0 \
   --dest-ip-ranges 0.0.0.0/0 \
@@ -166,7 +169,7 @@ gcloud beta compute network-firewall-policies rules create 11 \
   --action=APPLY_SECURITY_PROFILE_GROUP \
   --firewall-policy newfgt-nsi \
   --global-firewall-policy \
-  --security-profile-group organizations/<org-id>/locations/global/securityProfileGroups/newfgt-nsi-ftnt-spg1 \
+  --security-profile-group organizations/<org-id>/locations/global/securityProfileGroups/<project-id>-ftnt-spg1 \
   --layer4-configs all \
   --src-ip-ranges 0.0.0.0/0 \
   --dest-ip-ranges 0.0.0.0/0 \
@@ -202,14 +205,14 @@ gcloud compute networks peerings list --network=fgt-nsi-fgt-nsi-ib-new-web
 ### 2. Test Connectivity Between VPCs
 ```bash
 # From a Web VPC VM, ping a Web2 VPC VM
-# RDP into fgt-nsi-web-us-central1a
-# Open PowerShell and ping:
+gcloud compute ssh fgt-nsi-web-us-central1a --zone=us-central1-a
 ping 10.13.0.x  # IP of a Web2 VPC server
+curl http://10.13.0.x  # Apache test page on the Web2 VPC server
 
 # From a Web2 VPC VM, ping a Web VPC VM
-# RDP into fgt-nsi-web2-us-central1a
-# Open PowerShell and ping:
+gcloud compute ssh fgt-nsi-web2-us-central1a --zone=us-central1-a
 ping 10.12.0.x  # IP of a Web VPC server
+curl http://10.12.0.x  # Apache test page on the Web VPC server
 ```
 
 ### 3. Verify Traffic Inspection on FortiGate
