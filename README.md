@@ -1,4 +1,4 @@
-# FortiGate NSI (Network Service Insertion) Terraform Configuration
+# FortiGate NSI (Network Security Integration) Terraform Configuration
 
 **Experimental**
  
