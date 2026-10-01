@@ -1,6 +1,6 @@
 # Web Server VMs in Web2 VPC for NSI traffic inspection demonstration
 resource "google_compute_instance" "web2_servers" {
-  for_each = { for zone in var.zones : zone => "fgt-nsi-web2-${replace(zone, "-", "")}" }
+  for_each = { for zone in var.zones : zone => "fgt-nsi-web2-${replace(zone, "-", "")}" if var.deploy_web_servers }
 
   name         = each.value
   machine_type = "e2-medium"
@@ -101,6 +101,8 @@ resource "google_compute_instance" "web2_servers" {
 
 # Firewall rules for web2 servers
 resource "google_compute_firewall" "web2_server_firewall" {
+  count = var.deploy_web_servers ? 1 : 0
+
   name        = "${local.prefix}-web2-server-allow"
   network     = google_compute_network.vpc_networks["web2"].id
   description = "Allow HTTP, HTTPS, SSH, and iperf3 to web2 servers"
@@ -116,4 +118,11 @@ resource "google_compute_firewall" "web2_server_firewall" {
 
   source_ranges = ["0.0.0.0/0"]
   target_tags   = ["web2-server", "allow-https-ssh"]
+}
+
+# Keeps existing deployments from destroying and recreating this rule now that it
+# is gated by count.
+moved {
+  from = google_compute_firewall.web2_server_firewall
+  to   = google_compute_firewall.web2_server_firewall[0]
 }

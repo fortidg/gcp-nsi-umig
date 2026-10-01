@@ -81,24 +81,12 @@ config system probe-response
     set mode http-probe
 end
 
-config system affinity-packet-redistribution
-    edit 1
-        set interface port1
-        set affinity-cpumask 0xFF
-    next
-    edit 2
-        set interface port2
-        set affinity-cpumask 0xFF
-    next
-end
-
 config firewall service custom
     edit ProbeService
         set comment "Default Probe for GCP on port ${health_check_port}"
         set tcp-portrange ${health_check_port}
     next
 end
-
 
 config router static
     edit 1
@@ -176,83 +164,7 @@ config firewall policy
         set inspection-mode flow
         set utm-status enable
     next
-end
-
-config webfilter profile
-    edit doc-example-webfilter-profile
-        set comment Default web filtering.
-        config ftgd-wf
-            unset options
-            config filters
-                edit 1
-                    set category 1
-                    set action block
-                next
-                edit 2
-                    set category 36
-                    set action block
-                next
-                edit 3
-                    set category 37
-                    set action block
-                next
-                edit 4
-                    set category 30
-                    set action block
-                next
-                edit 5
-                    set category 14
-                    set action block
-                next
-            end
-        end
-        set log-all-url enable
-    next
-end
-
-config firewall ssl-ssh-profile
-    edit custom-cert
-        set comment Read-only SSL handshake inspection profile.
-        config https
-            set ports 443
-            set status certificate-inspection
-            set quic bypass
-        end
-        config ftps
-            set status disable
-        end
-        config imaps
-            set status disable
-        end
-        config pop3s
-            set status disable
-        end
-        config smtps
-            set status disable
-        end
-        config ssh
-            set ports 22
-            set status disable
-        end
-        config dot
-            set status disable
-            set quic inspect
-        end
-    next
-end
-
-config firewall policy
     edit 3
-        set name test
-        set srcintf gcp
-        set dstintf gcp
-        set srcaddr all
-        set dstaddr all
-        set schedule always
-        set service PING
-        set logtraffic disable
-    next
-    edit 4
         set name genevepolicy
         set srcintf gcp
         set dstintf gcp
@@ -262,7 +174,6 @@ config firewall policy
         set schedule always
         set service ALL
         set utm-status enable
-        set ssl-ssh-profile custom-cert
         set logtraffic all
     next
 end
@@ -278,49 +189,8 @@ config system dns
     set vrf-select 5
 end
 
-config system affinity-interrupt
-    edit 1
-        set interrupt "eth0-ntfy-block.0"
-        set affinity-cpumask "0x0000000000000001"
-    next
-    edit 2
-        set interrupt "eth0-ntfy-block.1"
-        set affinity-cpumask "0x0000000000000002"
-    next
-    edit 3
-        set interrupt "eth0-ntfy-block.2"
-        set affinity-cpumask "0x0000000000000004"
-    next
-    edit 4
-        set interrupt "eth0-ntfy-block.3"
-        set affinity-cpumask "0x0000000000000008"
-    next
-    edit 5
-        set interrupt "eth1-ntfy-block.0"
-        set affinity-cpumask "0x0000000000000001"
-    next
-    edit 6
-        set interrupt "eth1-ntfy-block.1"
-        set affinity-cpumask "0x0000000000000002"
-    next
-    edit 7
-        set interrupt "eth1-ntfy-block.2"
-        set affinity-cpumask "0x0000000000000004"
-    next
-    edit 8
-        set interrupt "eth1-ntfy-block.3"
-        set affinity-cpumask "0x0000000000000008"
-    next
-end
 
-
-%{ if fmg == "true" }
---==FGTCONF==
-Content-Type: text/plain; charset="us-ascii"
-MIME-Version: 1.0
-Content-Transfer-Encoding: 7bit
-Content-Disposition: attachment; filename="license"
-
+%{ if fmg == "true" ~}
 config system central-management
     set type fortimanager
     set fmg ${fmg_ip}
@@ -328,20 +198,14 @@ config system central-management
     set interface port2
     set vrf-select 5
 end
-
-%{ endif }
-
---==FGTCONF==
-
-%{ if flx_tok != "" }
+%{ endif ~}
+%{ if flx_tok != "" ~}
 --==FGTCONF==
 Content-Type: text/plain; charset="us-ascii"
 MIME-Version: 1.0
 Content-Transfer-Encoding: 7bit
 Content-Disposition: attachment; filename="license"
 
-execute vm-license ${flx_tok}
-
-%{ endif }
-
---==FGTCONF==
+LICENSE-TOKEN:${trimprefix(flx_tok, "LICENSE-TOKEN:")}
+%{ endif ~}
+--==FGTCONF==--

@@ -80,6 +80,8 @@ terraform apply
 - ✅ Firewall rules for all VPCs
 - ✅ Health checks
 
+**Without the demo workload:** set `deploy_web_servers = false` in `terraform.tfvars` to skip the Web/Web2 VPCs, their subnets and firewall rules, the VPC peering, and the web server VMs. Only the FortiGate NSI side is deployed. `setup-nsi.sh` then skips the web VPC associations in steps 4 and 9. Pass your own VPCs in `CONSUMER_NETWORKS` instead (see below).
+
 ### Step 4: Configure NSI (Automated Script)
 
 ```bash
@@ -90,16 +92,27 @@ chmod +x setup-nsi.sh
 ./setup-nsi.sh
 ```
 
+**Inspecting your own VPCs:** set `CONSUMER_NETWORKS` to a comma- or space-separated list of VPC names in `PROJECT_ID`. The script associates them in steps 4 and 9, alongside the web VPCs (if deployed):
+
+```bash
+CONSUMER_NETWORKS="prod-vpc,staging-vpc" ./setup-nsi.sh
+```
+
+- **Association names:** `newfgt-nsi-epga-<network>` and `newfgt-nsi-fpa-<network>`.
+- **Checks before creation:** every network is checked before anything is created. A typo, or the inspection or management VPC, stops the run.
+- **All traffic is steered:** every associated VPC's traffic (`0.0.0.0/0`, both directions) goes through the FortiGates.
+- **One firewall policy per VPC:** a VPC that already has a global network firewall policy can't be associated. The script reports the failure and exits non-zero.
+
 **What the script does:**
 1. Creates NSI Intercept Deployment Group
 2. Creates Intercept Deployments (3 zones)
 3. Creates Intercept Endpoint Group
-4. Associates Endpoint Group with **both Web and Web2 VPCs**
+4. Associates Endpoint Group with **both Web and Web2 VPCs** and any `CONSUMER_NETWORKS`
 5. Creates Security Profile
 6. Creates Security Profile Group
 7. Creates Firewall Policy
 8. Creates Firewall Policy Rules (ingress/egress)
-9. Associates Policy with **both Web and Web2 VPCs**
+9. Associates Policy with **both Web and Web2 VPCs** and any `CONSUMER_NETWORKS`
 
 **Expected output:**
 ```
@@ -112,12 +125,12 @@ chmod +x setup-nsi.sh
 [STEP] 1. Creating intercept deployment group...
 [STEP] 2. Creating intercept deployments for each zone...
 [STEP] 3. Creating intercept endpoint group...
-[STEP] 4. Associating endpoint group with web VPCs...
+[STEP] 4. Associating endpoint group with workload VPCs...
 [STEP] 5. Creating security profile...
 [STEP] 6. Creating security profile group...
 [STEP] 7. Creating firewall policy...
 [STEP] 8. Creating firewall policy rules...
-[STEP] 9. Associating policy with web VPCs...
+[STEP] 9. Associating policy with workload VPCs...
 [INFO] NSI setup completed successfully!
 ```
 
@@ -225,17 +238,19 @@ gcloud compute backend-services get-health fgt-nsi-backend-service --region=us-c
 # Make the cleanup script executable
 chmod +x cleanup-nsi.sh
 
-# Run the cleanup script
-./cleanup-nsi.sh
+# Run the cleanup script (use the same CONSUMER_NETWORKS as setup, if any)
+CONSUMER_NETWORKS="prod-vpc,staging-vpc" ./cleanup-nsi.sh
 ```
 
+Before deleting anything, the script checks for associations on the `newfgt-nsi` policy or the endpoint group that it wouldn't remove, such as a network left out of `CONSUMER_NETWORKS` or one added by hand. If it finds any, it lists them and stops with nothing deleted.
+
 **What the script does (in reverse order):**
-1. Removes firewall policy associations from **both Web and Web2 VPCs**
+1. Removes firewall policy associations from **both Web and Web2 VPCs** and every `CONSUMER_NETWORKS` VPC
 2. Deletes firewall policy rules
 3. Deletes firewall policy
 4. Deletes security profile group
 5. Deletes security profile
-6. Deletes intercept endpoint group associations from **both VPCs**
+6. Deletes intercept endpoint group associations from **both VPCs** and every `CONSUMER_NETWORKS` VPC
 7. Deletes intercept endpoint group
 8. Deletes intercept deployments (3 zones)
 9. Deletes intercept deployment group
