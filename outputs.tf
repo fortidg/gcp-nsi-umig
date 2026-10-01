@@ -1,3 +1,10 @@
+locals {
+  # The NSI consumer-side commands need a workload VPC to attach to. That is the
+  # demo web VPC when it is deployed; otherwise the user supplies their own.
+  workload_vpc_name  = var.deploy_web_servers ? google_compute_network.vpc_networks["web"].name : "<your-workload-vpc>"
+  workload_vpc_label = var.deploy_web_servers ? "web VPC" : "your workload VPC"
+}
+
 # Network Outputs
 output "vpc_networks" {
   description = "Created VPC networks"
@@ -10,14 +17,16 @@ output "vpc_networks" {
       id   = google_compute_network.vpc_networks["management"].id
       name = google_compute_network.vpc_networks["management"].name
     }
-    web_vpc = {
+    # null when deploy_web_servers = false; setup-nsi.sh relies on that to skip
+    # the web VPC associations.
+    web_vpc = var.deploy_web_servers ? {
       id   = google_compute_network.vpc_networks["web"].id
       name = google_compute_network.vpc_networks["web"].name
-    }
-    web2_vpc = {
+    } : null
+    web2_vpc = var.deploy_web_servers ? {
       id   = google_compute_network.vpc_networks["web2"].id
       name = google_compute_network.vpc_networks["web2"].name
-    }
+    } : null
   }
 }
 
@@ -34,16 +43,16 @@ output "subnets" {
       name       = google_compute_subnetwork.subnets["management_central"].name
       cidr_range = google_compute_subnetwork.subnets["management_central"].ip_cidr_range
     }
-    web_subnet = {
+    web_subnet = var.deploy_web_servers ? {
       id         = google_compute_subnetwork.subnets["web_central"].id
       name       = google_compute_subnetwork.subnets["web_central"].name
       cidr_range = google_compute_subnetwork.subnets["web_central"].ip_cidr_range
-    }
-    web2_subnet = {
+    } : null
+    web2_subnet = var.deploy_web_servers ? {
       id         = google_compute_subnetwork.subnets["web2_central"].id
       name       = google_compute_subnetwork.subnets["web2_central"].name
       cidr_range = google_compute_subnetwork.subnets["web2_central"].ip_cidr_range
-    }
+    } : null
   }
 }
 
@@ -156,6 +165,7 @@ output "project_summary" {
     instance_count         = var.fortigate_instance_count
     zones                  = var.zones
     admin_port             = var.admin_port
+    web_servers_deployed   = var.deploy_web_servers
   }
 }
 
@@ -209,10 +219,10 @@ output "nsi_deployment_instructions" {
       --location global \
       --no-async
     
-    4. Associate endpoint group with web VPC:
+    4. Associate endpoint group with ${local.workload_vpc_label}:
     gcloud beta network-security intercept-endpoint-group-associations create new-fgt-nsi-ftnt-epg-assoc \
       --intercept-endpoint-group newfgt-nsi-ftnt-epg \
-      --network ${google_compute_network.vpc_networks["web"].name} \
+      --network ${local.workload_vpc_name} \
       --project ${var.project_id} \
       --location global \
       --no-async
@@ -257,12 +267,12 @@ output "nsi_deployment_instructions" {
       --dest-ip-ranges 0.0.0.0/0 \
       --direction EGRESS
     
-    9. Associate policy with web VPC:
+    9. Associate policy with ${local.workload_vpc_label}:
     gcloud compute network-firewall-policies associations create \
       --name newfgt-nsi-policy-assoc \
       --global-firewall-policy \
       --firewall-policy newfgt-nsi \
-      --network ${google_compute_network.vpc_networks["web"].name} \
+      --network ${local.workload_vpc_name} \
       --project ${var.project_id}
     
     EOT

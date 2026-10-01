@@ -23,6 +23,11 @@ zones = [
 admin_port     = 8443
 admin_password = "YourSecurePasswordHere!"
 
+# Demo workload (optional)
+# Set to false to deploy only the FortiGate NSI side, without the web/web2 VPCs,
+# VPC peering and web server VMs. You then associate your own VPCs with NSI.
+# deploy_web_servers = true
+
 # Network Configuration (optional customization)
 # inspection_subnet_cidr  = "10.50.160.0/24"
 # management_subnet_cidr  = "10.50.180.0/24"
@@ -41,22 +46,20 @@ admin_password = "YourSecurePasswordHere!"
 #   team       = "networking"
 # }
 
-# Additional instance configs (optional) 
-# You can add other custom_metadata if needed, you will just need to be sure to update fortigate-config.tpl in the templates folder
+# Additional instance configs (optional)
+# flx_tok is a top-level attribute of instance_configs, NOT a custom_metadata key.
+# Nesting it under custom_metadata just adds an unused GCE metadata key and leaves
+# the license section out of the rendered cloud-init.
+# custom_metadata is only for extra GCE metadata keys; if you add any, be sure to
+# update fortigate-config.tpl in the templates folder to consume them.
 instance_configs = {
   "us-central1-a" = {
-    custom_metadata = {
-      flx_tok = "<your token here>"
-    }
+    flx_tok = "<your token here>"
   }
   "us-central1-b" = {
-    custom_metadata = {
-      flx_tok = "<your token here>"
-    }
+    flx_tok = "<your token here>"
   }
   "us-central1-c" = {
-    custom_metadata = {
-      flx_tok = "<your token here>"
-    }
+    flx_tok = "<your token here>"
   }
 }

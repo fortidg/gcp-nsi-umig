@@ -12,6 +12,11 @@ resource "google_compute_forwarding_rule" "fortigate_forwarding_rules" {
   ports                 = ["6081"]
   network_tier          = "PREMIUM"
 
+  # Use the reserved address that the FortiGate loopback (port1-ilb-probe) is
+  # configured with. Without this GCP assigns an ephemeral IP, and the FortiGates
+  # answer health probes on addresses the load balancer never uses.
+  ip_address = google_compute_address.ilb_frontend_ips[each.key].address
+
   # Reference the backend service
   backend_service = google_compute_region_backend_service.fortigate_backend_service.id
 

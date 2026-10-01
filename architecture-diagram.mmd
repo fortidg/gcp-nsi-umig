@@ -1,109 +1,82 @@
-graph TB
-    %% VPC Networks
-    subgraph "GCP Project"
-        subgraph "Inspection VPC (fgt-nsi-ib-new)"
-            INS_SUBNET["Inspection Subnet<br/>10.50.160.0/24<br/>us-central1"]
+flowchart LR
+    %% FortiGate NSI on GCP. One FortiGate, unmanaged instance group, forwarding
+    %% rule and intercept deployment is created per zone in var.zones; two zones
+    %% are shown. Names assume the default prefix "fgt-nsi".
+
+    subgraph CONSUMER["Consumer side · workload VPCs"]
+        direction TB
+        subgraph DEMO["Demo workload · deploy_web_servers = true"]
+            direction TB
+            WEB["Web VPC · 10.12.0.0/24<br/>Debian 12 web servers<br/>Apache · iperf3"]
+            WEB2["Web2 VPC · 10.13.0.0/24<br/>Debian 12 web servers<br/>Apache · iperf3"]
+            WEB <-->|VPC peering| WEB2
         end
-        
-        subgraph "Management VPC (fgt-nsi-ib-new-mgmt)"
-            MGMT_SUBNET["Management Subnet<br/>10.50.180.0/24<br/>us-central1"]
-        end
-        
-        subgraph "Web VPC (fgt-nsi-ib-new-web)"
-            WEB_SUBNET["Web Subnet<br/>10.12.0.0/24<br/>us-central1"]
-        end
+        OWN["Your VPCs<br/>CONSUMER_NETWORKS"]
     end
 
-    %% FortiGate Infrastructure
-    subgraph "FortiGate Infrastructure"
-        TEMPLATE["Instance Template<br/>fgt-nsi762-v5<br/>c4-standard-4"]
-        
-        subgraph "Managed Instance Group"
-            FGT1["FortiGate-1<br/>Zone: us-central1-a"]
-            FGT2["FortiGate-2<br/>Zone: us-central1-b"]
-            FGT3["FortiGate-3<br/>Zone: us-central1-c"]
+    subgraph NSI["NSI · created by setup-nsi.sh"]
+        direction TB
+        FWP["Global network firewall policy<br/>newfgt-nsi<br/>rule 10 ingress · rule 11 egress<br/>0.0.0.0/0 → apply profile group"]
+        SPG["Security profile group (org)<br/>&lt;project&gt;-ftnt-spg1<br/>+ custom intercept profile -sp1"]
+        EPG["Intercept endpoint group<br/>newfgt-nsi-ftnt-epg"]
+        DG["Intercept deployment group<br/>newfgt-nsi-ftnt-dg"]
+        DEP["Intercept deployments<br/>fgt-nsi-&lt;zone&gt; · one per zone"]
+        FWP --> SPG --> EPG --> DG --> DEP
+    end
+
+    subgraph PRODUCER["Producer side · Inspection VPC · 10.50.160.0/24"]
+        direction TB
+        subgraph LB["Internal passthrough load balancer"]
+            direction TB
+            FR["Forwarding rules<br/>fgt-&lt;zone&gt; · UDP 6081<br/>reserved IP per zone"]
+            BES["Backend service (UDP)<br/>session affinity CLIENT_IP<br/>health check TCP 8080"]
+            FR --> BES
         end
-    end
-
-    %% Load Balancer Components
-    subgraph "Load Balancer"
-        HEALTH_CHECK["Health Check<br/>doc-nsi-hc<br/>Port: 8080"]
-        BACKEND_SERVICE["Backend Service<br/>fgt-nsi-us-central1-lb<br/>Protocol: UDP<br/>Internal LB"]
-        
-        subgraph "Forwarding Rules"
-            FWD_A["Forwarding Rule A<br/>fgt-us-central1a<br/>UDP:6081"]
-            FWD_B["Forwarding Rule B<br/>fgt-us-central1b<br/>UDP:6081"]
-            FWD_C["Forwarding Rule C<br/>fgt-us-central1c1<br/>UDP:6081"]
+        subgraph ZA["Zone A"]
+            FGT_A["FortiGate-VM<br/>unmanaged instance group"]
         end
+        subgraph ZB["Zone B"]
+            FGT_B["FortiGate-VM<br/>unmanaged instance group"]
+        end
+        NAT["Cloud NAT"]
+        BES --> FGT_A
+        BES --> FGT_B
     end
 
-    %% Firewall Rules
-    subgraph "Firewall Rules"
-        FW_INS_IN["Inspection VPC<br/>Allow All Ingress<br/>0.0.0.0/0"]
-        FW_INS_EG["Inspection VPC<br/>Allow All Egress<br/>0.0.0.0/0"]
-        FW_MGMT_IN["Management VPC<br/>Allow All Ingress<br/>0.0.0.0/0"]
-        FW_MGMT_EG["Management VPC<br/>Allow All Egress<br/>0.0.0.0/0"]
+    subgraph MGMT["Management VPC · 10.50.180.0/24"]
+        MGMT_NET["port2 · external IP per FortiGate"]
     end
 
-    %% External Components
-    INTERNET["Internet"]
-    NSI_CLIENT["NSI Client<br/>Traffic Source"]
+    ADMIN(["Admin"])
+    FORTICARE(["FortiCare / FortiGuard<br/>FortiFlex licensing"])
 
-    %% Connections
-    %% Instance Template to MIG
-    TEMPLATE -.->|creates| FGT1
-    TEMPLATE -.->|creates| FGT2
-    TEMPLATE -.->|creates| FGT3
+    %% Associations made per VPC by setup-nsi.sh
+    FWP -. "policy association" .-> CONSUMER
+    EPG -. "endpoint group association" .-> CONSUMER
+    DEP -->|references| FR
 
-    %% Network Interfaces
-    FGT1 ---|Port1| INS_SUBNET
-    FGT1 ---|Port2| MGMT_SUBNET
-    FGT2 ---|Port1| INS_SUBNET
-    FGT2 ---|Port2| MGMT_SUBNET
-    FGT3 ---|Port1| INS_SUBNET
-    FGT3 ---|Port2| MGMT_SUBNET
+    %% Intercepted traffic
+    CONSUMER ==>|"intercepted traffic<br/>Geneve UDP 6081"| FR
 
-    %% Load Balancer Connections
-    HEALTH_CHECK -.->|monitors| FGT1
-    HEALTH_CHECK -.->|monitors| FGT2
-    HEALTH_CHECK -.->|monitors| FGT3
-
-    FGT1 ---|backend| BACKEND_SERVICE
-    FGT2 ---|backend| BACKEND_SERVICE
-    FGT3 ---|backend| BACKEND_SERVICE
-
-    BACKEND_SERVICE ---|references| FWD_A
-    BACKEND_SERVICE ---|references| FWD_B
-    BACKEND_SERVICE ---|references| FWD_C
-
-    %% Traffic Flow
-    NSI_CLIENT -->|Geneve Traffic<br/>UDP:6081| FWD_A
-    NSI_CLIENT -->|Geneve Traffic<br/>UDP:6081| FWD_B
-    NSI_CLIENT -->|Geneve Traffic<br/>UDP:6081| FWD_C
-
-    FWD_A -.->|load balances| INS_SUBNET
-    FWD_B -.->|load balances| INS_SUBNET
-    FWD_C -.->|load balances| INS_SUBNET
-
-    %% Management Access
-    INTERNET -->|HTTPS:8443<br/>Management| MGMT_SUBNET
-
-    %% Firewall Protection
-    FW_INS_IN -.->|protects| INS_SUBNET
-    FW_INS_EG -.->|protects| INS_SUBNET
-    FW_MGMT_IN -.->|protects| MGMT_SUBNET
-    FW_MGMT_EG -.->|protects| MGMT_SUBNET
+    %% Management and egress
+    ADMIN -->|"HTTPS 8443 · SSH 22"| MGMT_NET
+    MGMT_NET --- FGT_A
+    MGMT_NET --- FGT_B
+    FGT_A -.-> NAT
+    FGT_B -.-> NAT
+    NAT -.-> FORTICARE
 
     %% Styling
-    classDef vpc fill:#e1f5fe
-    classDef subnet fill:#b3e5fc
-    classDef fortigate fill:#ffecb3
-    classDef loadbalancer fill:#c8e6c9
-    classDef firewall fill:#ffcdd2
-    classDef external fill:#f3e5f5
+    classDef ext fill:#f3e5f5,stroke:#7b1fa2
+    classDef fgt fill:#ffecb3,stroke:#ef6c00
+    classDef lb fill:#c8e6c9,stroke:#2e7d32
+    classDef nsi fill:#ffcdd2,stroke:#c62828
+    classDef workload fill:#e1f5fe,stroke:#0277bd
+    classDef net fill:#b3e5fc,stroke:#0277bd
 
-    class INS_SUBNET,MGMT_SUBNET,WEB_SUBNET subnet
-    class FGT1,FGT2,FGT3,TEMPLATE fortigate
-    class HEALTH_CHECK,BACKEND_SERVICE,FWD_A,FWD_B,FWD_C loadbalancer
-    class FW_INS_IN,FW_INS_EG,FW_MGMT_IN,FW_MGMT_EG firewall
-    class INTERNET,NSI_CLIENT external
+    class ADMIN,FORTICARE ext
+    class FGT_A,FGT_B fgt
+    class FR,BES,NAT lb
+    class FWP,SPG,EPG,DG,DEP nsi
+    class WEB,WEB2,OWN workload
+    class MGMT_NET net

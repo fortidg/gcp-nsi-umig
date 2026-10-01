@@ -76,6 +76,13 @@ variable "fmg_ip" {
   default     = ""
 }
 
+# Test workload toggle
+variable "deploy_web_servers" {
+  description = "Deploy the demo web/web2 VPCs, subnets, firewall rules, VPC peering and web server VMs. Set to false to deploy only the FortiGate NSI producer side and associate your own workload VPCs instead."
+  type        = bool
+  default     = true
+}
+
 # Network Configuration Variables
 variable "inspection_subnet_cidr" {
   description = "CIDR range for inspection subnet"

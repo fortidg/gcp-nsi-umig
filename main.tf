@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.0.0"
+  required_version = ">= 1.1.0"
 
   required_providers {
     google = {
@@ -45,8 +45,13 @@ locals {
   nat_router_name  = coalesce(var.nat_router_name, "${local.prefix}-inspection-nat-router")
   nat_gateway_name = coalesce(var.nat_gateway_name, "${local.prefix}-inspection-nat-gw")
 
-  # Network configurations based on gcloud commands
-  vpc_networks = {
+  # Network configurations based on gcloud commands.
+  #
+  # The web/web2 entries in each pair of maps below are the demo workload and are
+  # only created when var.deploy_web_servers is true. Filtering with a for
+  # expression (rather than `cond ? map : {}`) keeps the element types consistent
+  # and leaves the for_each keys -- and therefore the state addresses -- unchanged.
+  core_vpc_networks = {
     # Data/Traffic inspection VPC
     inspection = {
       name                    = "${local.prefix}-fgt-nsi-ib-new"
@@ -61,7 +66,9 @@ locals {
       description             = "FortiGate management VPC network with regional subnets"
       auto_create_subnetworks = false
     }
+  }
 
+  web_vpc_networks = {
     # Web VPC
     web = {
       name                    = "${local.prefix}-fgt-nsi-ib-new-web"
@@ -77,8 +84,13 @@ locals {
     }
   }
 
+  vpc_networks = merge(
+    local.core_vpc_networks,
+    { for k, v in local.web_vpc_networks : k => v if var.deploy_web_servers },
+  )
+
   # Subnet configurations
-  subnets = {
+  core_subnets = {
     # Inspection subnet
     inspection_central = {
       name                            = "${local.prefix}-fgt-nsi-central"
@@ -98,7 +110,9 @@ locals {
       description                     = "FortiGate management Subnet in us-central1"
       enable_private_ip_google_access = true
     }
+  }
 
+  web_subnets = {
     # Web subnet
     web_central = {
       name                            = "${local.prefix}-fgt-nsi-web1-central"
@@ -120,8 +134,13 @@ locals {
     }
   }
 
+  subnets = merge(
+    local.core_subnets,
+    { for k, v in local.web_subnets : k => v if var.deploy_web_servers },
+  )
+
   # Firewall rules
-  firewall_rules = {
+  core_firewall_rules = {
     # Inspection VPC - allow all ingress
     inspection_allow_ingress = {
       name          = "${local.prefix}-fgt-nsi-allow-all-in"
@@ -247,7 +266,9 @@ locals {
       ]
       description = "Allow Google Cloud health checks on management network"
     }
+  }
 
+  web_firewall_rules = {
     # Web2 VPC - allow all ingress for demonstration
     web2_allow_ingress = {
       name          = "${local.prefix}-fgt-nsi-web2-allow-all-in"
@@ -294,4 +315,9 @@ locals {
       description = "Allow all outgoing traffic for Web2 VPC"
     }
   }
+
+  firewall_rules = merge(
+    local.core_firewall_rules,
+    { for k, v in local.web_firewall_rules : k => v if var.deploy_web_servers },
+  )
 }
