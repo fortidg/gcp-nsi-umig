@@ -9,6 +9,13 @@ prefix          = "fgt-nsi"
 
 # FortiGate Configuration
 fortigate_license_type    = "payg"  # Options: "payg" or "byol"
+fortigate_version         = "76"    # Image family fortigate-<version>-<license_type>, e.g. "76" or "80"
+
+# Optional: pin a specific image instead of the latest in the family.
+# Overrides fortigate_version and fortigate_license_type.
+# 7.4.8 BYOL is projects/fortigcp-project-001/global/images/fortinet-fgt-748-20250529-001-w-license
+# 7.4.8 PAYG is projects/fortigcp-project-001/global/images/fortinet-fgtondemand-748-20250529-001-w-license
+# fortigate_vm_image      = "projects/fortigcp-project-001/global/images/fortinet-fgt-748-20250529-001-w-license"
 fortigate_machine_type    = "c4-standard-4"
 fortigate_instance_count  = 3
 

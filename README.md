@@ -274,9 +274,9 @@ The configuration provides detailed outputs including:
 - Consider backup and disaster recovery procedures
 
 ### Licensing
-- This configuration uses BYOL FortiGate images from `fortigcp-project-001`
-- Ensure you have valid FortiGate licenses for your instances
-- Update the image source in `main.tf` if using different licensing model
+- FortiGate images come from `fortigcp-project-001`. By default the latest image in the family `fortigate-<fortigate_version>-<fortigate_license_type>` is used (e.g. `fortigate-76-payg`, `fortigate-80-byol`)
+- Set `fortigate_vm_image` to pin a specific image instead; it overrides both `fortigate_version` and `fortigate_license_type`
+- For BYOL, ensure you have valid FortiGate licenses for your instances
 
 ## Troubleshooting
 

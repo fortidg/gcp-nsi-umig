@@ -32,6 +32,22 @@ variable "fortigate_license_type" {
   }
 }
 
+variable "fortigate_version" {
+  description = "FortiOS major/minor version used to pick the image family, e.g. \"76\" -> fortigate-76-<license_type>, \"80\" -> fortigate-80-<license_type>. Ignored when fortigate_vm_image is set."
+  type        = string
+  default     = "76"
+  validation {
+    condition     = can(regex("^[0-9]{2}$", var.fortigate_version))
+    error_message = "fortigate_version must be two digits, e.g. \"76\" or \"80\"."
+  }
+}
+
+variable "fortigate_vm_image" {
+  description = "Explicit FortiGate image, e.g. projects/fortigcp-project-001/global/images/fortinet-fgt-748-20250529-001-w-license. Overrides fortigate_version and fortigate_license_type; make sure the image's licensing (fgt = BYOL, fgtondemand = PAYG) matches what you intend. Leave empty to use the latest image in the family."
+  type        = string
+  default     = ""
+}
+
 variable "fortigate_machine_type" {
   description = "Machine type for FortiGate instances"
   type        = string

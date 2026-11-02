@@ -11,7 +11,7 @@ resource "google_compute_instance" "fortigate_instances" {
     auto_delete = true
     device_name = "${local.prefix}-fgt-boot-${each.key}"
     initialize_params {
-      image = data.google_compute_image.fortigate_image.self_link
+      image = local.fortigate_image
       size  = 50
       type  = "hyperdisk-balanced"
     }

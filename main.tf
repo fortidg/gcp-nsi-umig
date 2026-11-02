@@ -30,15 +30,19 @@ resource "random_string" "suffix" {
   upper   = false
 }
 
-# Data source for FortiGate image
+# Data source for FortiGate image. Only looked up when no explicit image is set.
 data "google_compute_image" "fortigate_image" {
-  family  = "fortigate-76-${var.fortigate_license_type}"
+  count   = var.fortigate_vm_image == "" ? 1 : 0
+  family  = "fortigate-${var.fortigate_version}-${var.fortigate_license_type}"
   project = "fortigcp-project-001"
 }
 
 locals {
   # Common naming prefix
   prefix = var.prefix
+
+  # Explicit image wins; otherwise the latest image in the selected family.
+  fortigate_image = var.fortigate_vm_image != "" ? var.fortigate_vm_image : data.google_compute_image.fortigate_image[0].self_link
 
   # Cloud NAT for the inspection VPC (FortiGate port1). Overridable so an
   # already-created router/gateway can be imported under its existing name.
