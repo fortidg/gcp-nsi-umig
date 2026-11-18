@@ -43,7 +43,7 @@ variable "fortigate_version" {
 }
 
 variable "fortigate_vm_image" {
-  description = "Explicit FortiGate image, e.g. projects/fortigcp-project-001/global/images/fortinet-fgt-748-20250529-001-w-license. Overrides fortigate_version and fortigate_license_type; make sure the image's licensing (fgt = BYOL, fgtondemand = PAYG) matches what you intend. Leave empty to use the latest image in the family."
+  description = "Explicit FortiGate image, e.g. projects/fortigcp-project-001/global/images/fortinet-fgt-768-date-001-w-license. Overrides fortigate_version and fortigate_license_type; make sure the image's licensing (fgt = BYOL, fgtondemand = PAYG) matches what you intend. Leave empty to use the latest image in the family."
   type        = string
   default     = ""
 }
