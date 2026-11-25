@@ -3,7 +3,8 @@
 
 # Required Variables
 project_id      = "your-gcp-project-id"
-organization_id = "your-gcp-organization-id"
+# Required only when nsi_security_profile_scope = "organization".
+# organization_id = "your-gcp-organization-id"
 region          = "us-central1"
 prefix          = "fgt-nsi"
 
@@ -31,8 +32,18 @@ admin_password = "YourSecurePasswordHere!"
 
 # Demo workload (optional)
 # Set to false to deploy only the FortiGate NSI side, without the web/web2 VPCs,
-# VPC peering and web server VMs. You then associate your own VPCs with NSI.
+# NCC demo spokes and web server VMs. Set nsi_consumer_vpc_names to inspect
+# existing workload VPCs.
 # deploy_web_servers = true
+# To connect existing VPCs through the same full mesh NCC hub:
+# ncc_existing_vpc_names = ["two-gke-a-vpc", "two-gke-b-vpc"]
+# To attach the NSI endpoint group and firewall policy to existing VPCs:
+# nsi_consumer_vpc_names = ["two-gke-a-vpc", "two-gke-b-vpc"]
+# Optional: prefix for security profile names. The default is project_id.
+# nsi_name_prefix = "my-project"
+# Profiles and groups default to project scope. Organization scope requires
+# roles/networksecurity.securityProfileAdmin on the organization.
+# nsi_security_profile_scope = "organization"
 
 # Network Configuration (optional customization)
 # inspection_subnet_cidr  = "10.50.160.0/24"

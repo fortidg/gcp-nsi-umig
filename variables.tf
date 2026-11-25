@@ -5,8 +5,9 @@ variable "project_id" {
 }
 
 variable "organization_id" {
-  description = "The GCP organization ID (required for NSI security profiles)"
+  description = "The GCP organization ID, required only when nsi_security_profile_scope is organization."
   type        = string
+  default     = null
 }
 
 variable "region" {
@@ -94,9 +95,48 @@ variable "fmg_ip" {
 
 # Test workload toggle
 variable "deploy_web_servers" {
-  description = "Deploy the demo web/web2 VPCs, subnets, firewall rules, VPC peering and web server VMs. Set to false to deploy only the FortiGate NSI producer side and associate your own workload VPCs instead."
+  description = "Deploy the demo web/web2 VPCs, subnets, firewall rules, NCC spokes, and web server VMs. Set to false to deploy only the FortiGate NSI producer side and associate your own workload VPCs instead."
   type        = bool
   default     = true
+}
+
+variable "ncc_existing_vpc_names" {
+  description = "Existing workload VPC names in project_id to connect through the full mesh NCC hub, in addition to demo web VPCs when enabled."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = length(var.ncc_existing_vpc_names) == length(distinct(var.ncc_existing_vpc_names))
+    error_message = "ncc_existing_vpc_names must not contain duplicates."
+  }
+}
+
+variable "nsi_consumer_vpc_names" {
+  description = "Existing VPC names in project_id to associate with NSI, in addition to the demo web VPCs when enabled."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for name in var.nsi_consumer_vpc_names : can(regex("^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$", name))])
+    error_message = "nsi_consumer_vpc_names must contain valid bare GCP VPC names."
+  }
+}
+
+variable "nsi_name_prefix" {
+  description = "Prefix for NSI security profile names. Defaults to project_id."
+  type        = string
+  default     = null
+}
+
+variable "nsi_security_profile_scope" {
+  description = "Scope for the NSI security profile and profile group. Project scope uses project IAM; organization scope requires organization IAM."
+  type        = string
+  default     = "project"
+
+  validation {
+    condition     = contains(["project", "organization"], var.nsi_security_profile_scope)
+    error_message = "nsi_security_profile_scope must be project or organization."
+  }
 }
 
 # Network Configuration Variables

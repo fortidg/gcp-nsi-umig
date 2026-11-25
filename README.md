@@ -2,7 +2,7 @@
 
 **Experimental**
  
-This Terraform configuration deploys a FortiGate Network Service Insertion (NSI) infrastructure on Google Cloud Platform, based on the gcloud configurations provided. The deployment creates the necessary VPC networks, subnets, FortiGate instances in a Managed Instance Group, load balancer components, and NSI-specific resources required for traffic inspection.
+This Terraform configuration deploys FortiGate Network Service Insertion (NSI) infrastructure on Google Cloud. It creates VPC networks, subnets, FortiGate instances in zonal unmanaged instance groups, load balancer components, and the NSI resources required for traffic inspection.
 
 
 ```mermaid
@@ -17,15 +17,18 @@ flowchart LR
             direction TB
             WEB["Web VPC · 10.12.0.0/24<br/>Debian 12 web servers<br/>Apache · iperf3"]
             WEB2["Web2 VPC · 10.13.0.0/24<br/>Debian 12 web servers<br/>Apache · iperf3"]
-            WEB <-->|VPC peering| WEB2
         end
-        OWN["Your VPCs<br/>CONSUMER_NETWORKS"]
+        OWN["Your VPCs<br/>nsi_consumer_vpc_names"]
+        NCC["NCC hub · full mesh<br/>VPC spokes"]
+        WEB <--> NCC
+        WEB2 <--> NCC
+        OWN <--> NCC
     end
 
-    subgraph NSI["NSI · created by setup-nsi.sh"]
+    subgraph NSI["NSI · managed by Terraform"]
         direction TB
         FWP["Global network firewall policy<br/>newfgt-nsi<br/>rule 10 ingress · rule 11 egress<br/>0.0.0.0/0 → apply profile group"]
-        SPG["Security profile group (org)<br/>&lt;project&gt;-ftnt-spg1<br/>+ custom intercept profile -sp1"]
+        SPG["Security profile group (project)<br/>&lt;project&gt;-ftnt-spg1<br/>+ custom intercept profile -sp1"]
         EPG["Intercept endpoint group<br/>newfgt-nsi-ftnt-epg"]
         DG["Intercept deployment group<br/>newfgt-nsi-ftnt-dg"]
         DEP["Intercept deployments<br/>fgt-nsi-&lt;zone&gt; · one per zone"]
@@ -58,7 +61,7 @@ flowchart LR
     ADMIN(["Admin"])
     FORTICARE(["FortiCare / FortiGuard<br/>FortiFlex licensing"])
 
-    %% Associations made per VPC by setup-nsi.sh
+    %% Associations managed per consumer VPC by Terraform
     FWP -. "policy association" .-> CONSUMER
     EPG -. "endpoint group association" .-> CONSUMER
     DEP -->|references| FR
@@ -96,8 +99,6 @@ flowchart LR
 
 ## Architecture Overview
 
-![drawing](drawing.png)
-
 This deployment creates:
 
 ### VPC Networks
@@ -107,8 +108,8 @@ This deployment creates:
 
 ### FortiGate Infrastructure
 - **Instance Template**: FortiGate VM template with dual network interfaces
-- **Managed Instance Group**: Auto-scaling group with 3 FortiGate instances across multiple zones
-- **Health Checks**: HTTP health checks for load balancer backend service
+- **Unmanaged Instance Groups**: Zonal groups for the FortiGate instances
+- **Health Checks**: TCP health checks for the load balancer backend service
 - **Load Balancer**: Internal UDP load balancer for Geneve traffic (port 6081)
 - **Forwarding Rules**: Three zone-specific forwarding rules for NSI deployment
 
@@ -116,17 +117,39 @@ This deployment creates:
 - **Intercept Deployment Group**: Global deployment group for FortiGate NSI
 - **Intercept Deployments**: Zone-specific intercept deployments linking forwarding rules
 - **Intercept Endpoint Group**: Endpoint group for traffic interception
-- **Intercept Endpoint Group Association**: Associations with the web VPCs and any `CONSUMER_NETWORKS`
+- **Intercept Endpoint Group Association**: Associations with the web VPCs and any `nsi_consumer_vpc_names`
 - **Security Profiles**: Custom intercept security profile for traffic processing
 - **Security Profile Group**: Group containing the custom intercept profile
 - **Firewall Policy**: Network firewall policy with NSI rules for ingress/egress traffic
-- **Firewall Policy Association**: Policy associations with the web VPCs and any `CONSUMER_NETWORKS`
+- **Firewall Policy Association**: Policy associations with the web VPCs and any `nsi_consumer_vpc_names`
 
 ### Test Infrastructure (optional)
 - **Web Server VMs**: Debian 12 instances across three zones for testing NSI functionality, preloaded with Apache and iperf3
-- **Web / Web2 VPCs**: Two peered workload VPCs hosting the web servers
+- **Web / Web2 VPCs**: Two workload VPCs connected through an NCC full mesh hub
 
-All of the test infrastructure is controlled by `deploy_web_servers` (default `true`). Set it to `false` to deploy only the FortiGate NSI producer side. `setup-nsi.sh` then skips the web VPC associations. List your own workload VPCs in `CONSUMER_NETWORKS` instead (see [Inspecting your own VPCs](#inspecting-your-own-vpcs-consumer_networks)).
+All of the test infrastructure is controlled by `deploy_web_servers` (default `true`). Set it to `false` to deploy only the FortiGate NSI producer side. List workload VPCs to inspect in `nsi_consumer_vpc_names`.
+
+### Network Connectivity Center
+
+Terraform creates an NCC hub and one VPC spoke per workload VPC. With `deploy_web_servers = true`, the two demo web VPCs join the hub. With `deploy_web_servers = false`, set `ncc_existing_vpc_names` to the existing VPC names to connect. The hub explicitly uses the **MESH** topology; every spoke exchanges its private subnet routes with every other spoke. The inspection and management VPCs are not NCC spokes.
+
+```hcl
+deploy_web_servers     = false
+ncc_existing_vpc_names = ["two-gke-a-vpc", "two-gke-b-vpc"]
+```
+
+`ncc_existing_vpc_names` controls routing. To inspect those VPCs with NSI, also include them in `nsi_consumer_vpc_names`. NCC connectivity does not change firewall policy evaluation or automatically allow traffic.
+
+To migrate an existing demo deployment, remove the two Terraform-managed VPC peerings before creating the NCC spokes: Google Cloud does not allow the same two VPCs to be both directly peered and spokes on one NCC hub. After updating this configuration, run:
+
+```bash
+terraform apply \
+  '-target=google_compute_network_peering.web_to_web2[0]' \
+  '-target=google_compute_network_peering.web2_to_web[0]'
+terraform apply
+```
+
+The first apply removes the old peerings; the second creates the NCC hub and spokes. Expect a short connectivity gap. Check `terraform plan` before each apply. [Google Cloud's VPC spoke guidance](https://docs.cloud.google.com/network-connectivity/docs/network-connectivity-center/concepts/vpc-spokes-overview) describes the peering restriction.
 
 ### Security
 - **Firewall Rules**: Allow all ingress/egress traffic on all VPCs plus health check rules
@@ -190,7 +213,12 @@ After deployment, FortiGate instances will have public IP addresses for manageme
 - `zones`: Availability zones for instance distribution
 - `prefix`: Resource naming prefix (default: fgt-nsi)
 - `admin_port`: FortiGate admin port (default: 8443)
-- `deploy_web_servers`: Deploy the demo web/web2 VPCs, peering, firewall rules and web server VMs (default: true)
+- `deploy_web_servers`: Deploy the demo web/web2 VPCs, NCC spokes, firewall rules and web server VMs (default: true)
+- `ncc_existing_vpc_names`: Existing VPCs to join to the full mesh NCC hub (default: none)
+- `nsi_consumer_vpc_names`: Existing VPCs to associate with the NSI endpoint group and firewall policy (default: none)
+- `nsi_name_prefix`: Optional prefix for security profile names (default: project ID)
+- `nsi_security_profile_scope`: `project` (default) or `organization`; organization scope requires organization IAM
+- `organization_id`: Required only when `nsi_security_profile_scope = "organization"`
 
 ### Network Customization
 - `inspection_subnet_cidr`: Inspection subnet CIDR (default: 10.50.160.0/24)
@@ -199,33 +227,29 @@ After deployment, FortiGate instances will have public IP addresses for manageme
 
 ## NSI Integration
 
-After `terraform apply`, run `setup-nsi.sh` to create the NSI resources (deployment group, per-zone deployments, endpoint group, security profile and profile group, and the `newfgt-nsi` firewall policy) and associate them with the workload VPCs:
+`terraform apply` creates the deployment group, zonal deployments, endpoint group, security profile and group, and `newfgt-nsi` firewall policy. It attaches the endpoint group and policy to both demo web VPCs when `deploy_web_servers = true`.
 
-```bash
-PROJECT_ID=your-project-id ORGANIZATION_ID=123456789012 ./setup-nsi.sh
+The security profile and group default to project scope. This fits the project-level global network firewall policy and uses project IAM. To share profiles at organization scope, set `nsi_security_profile_scope = "organization"` and grant the deploying identity `roles/networksecurity.securityProfileAdmin` on the organization.
+
+### Inspecting your own VPCs
+
+Set `nsi_consumer_vpc_names` to existing VPC names in `project_id`:
+
+```hcl
+nsi_consumer_vpc_names = ["prod-vpc", "staging-vpc"]
 ```
 
-The demo web VPCs are associated automatically when `deploy_web_servers = true`.
-
-### Inspecting your own VPCs (`CONSUMER_NETWORKS`)
-
-Set `CONSUMER_NETWORKS` to a comma- or space-separated list of VPC names in `PROJECT_ID` to associate them with NSI as well:
-
-```bash
-CONSUMER_NETWORKS="prod-vpc,staging-vpc" PROJECT_ID=... ORGANIZATION_ID=... ./setup-nsi.sh
-```
-
-For each network the script creates:
+For each network Terraform creates:
 - an endpoint group association named `newfgt-nsi-epga-<network>`
 - a firewall policy association named `newfgt-nsi-fpa-<network>`
 
-Names longer than 63 characters are truncated and given a hash suffix.
+Long association names are shortened with a hash suffix. The FortiGate inspection and management VPCs must not be listed as consumers.
 
 What to know before you add a VPC:
-- **All traffic is inspected.** Rules 10 and 11 apply to all traffic (`0.0.0.0/0`) in and out of every associated VPC, and steer it through the FortiGates.
-- **A VPC can have only one global network firewall policy.** If one of your VPCs already has a policy, its association fails and the script exits non-zero.
-- **Typos fail early.** Every network is checked before anything is created. The script rejects unknown names and the FortiGate inspection and management VPCs. The demo web VPCs are already associated, so listing them only produces a warning.
-- **Re-runs are safe.** Associations that already exist are skipped, so you can re-run with a longer list to add networks.
+- **Rules 10 and 11 match all IPv4 traffic.** Customize them before attaching production VPCs.
+- **A VPC can have only one global network firewall policy.** Check for an existing policy before adding a consumer.
+- **Classic firewall rule order matters.** A classic allow or deny rule can stop traffic before the NSI policy when the VPC uses `AFTER_CLASSIC_FIREWALL`. Review [firewall policy evaluation order](https://docs.cloud.google.com/firewall/docs/firewall-policies-rule-eval-order).
+- **Existing manually created NSI resources require import.** Import each matching resource into Terraform state before applying, so Terraform adopts it instead of trying to create a duplicate. See [SETUP_GUIDE.md](SETUP_GUIDE.md).
 
 ## File Structure
 
@@ -236,8 +260,9 @@ gcp-nsi/
 ├── outputs.tf              # Output values
 ├── networks.tf             # VPC networks and subnets
 ├── firewall.tf             # Firewall rules
-├── instance_template.tf    # FortiGate instance template
-├── instance_group.tf       # Managed instance group
+├── ncc.tf                  # NCC hub and VPC spokes
+├── nsi_intercept.tf        # NSI groups, profiles, rules, and associations
+├── instance_group.tf       # FortiGate instances and instance groups
 ├── health_check.tf         # Load balancer health checks
 ├── backend_service.tf      # Load balancer backend service
 ├── forwarding_rules.tf     # Internal load balancer forwarding rules
@@ -254,7 +279,7 @@ The configuration provides detailed outputs including:
 - FortiGate instance group information
 - Load balancer components
 - Forwarding rule IP addresses
-- NSI deployment instructions
+- NSI resource IDs and consumer associations
 
 ## Production Considerations
 
@@ -269,8 +294,8 @@ The configuration provides detailed outputs including:
 - Monitor traffic flows and inspection statistics
 
 ### High Availability
-- Instances are distributed across multiple zones automatically
-- Auto-healing is enabled with health check monitoring
+- Place instances in multiple zones by listing those zones in `zones`
+- Monitor backend health and replace unhealthy instances through your operations process
 - Consider backup and disaster recovery procedures
 
 ### Licensing
@@ -301,14 +326,9 @@ The configuration provides detailed outputs including:
 
 ## Cleanup
 
-Remove the NSI resources first, then destroy the Terraform resources:
+Terraform removes the NSI resources and their associations in dependency order:
 ```bash
-CONSUMER_NETWORKS="prod-vpc,staging-vpc" PROJECT_ID=... ORGANIZATION_ID=... ./cleanup-nsi.sh
 terraform destroy
 ```
 
-Run `cleanup-nsi.sh` with the same `CONSUMER_NETWORKS` you passed to `setup-nsi.sh`. Leave it unset if you didn't use it.
-
-Before deleting anything, the script checks the `newfgt-nsi` firewall policy and the endpoint group for associations it doesn't know about. These can be a network you left out of `CONSUMER_NETWORKS`, or an association someone made by hand. If it finds any, it lists them and exits without deleting anything.
-
-**Warning**: This will permanently delete all created resources. Ensure you have backups of any important configurations or data.
+Review the destroy plan before confirming. Security profiles shared outside this Terraform state can block deletion; import or separate ownership of shared profiles before destroying.

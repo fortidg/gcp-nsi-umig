@@ -9,6 +9,7 @@
 *.tfstate.backup
 *.csv
 .terraform*
+!.terraform.lock.hcl
 *.pem
 *.lic
 tf.plan

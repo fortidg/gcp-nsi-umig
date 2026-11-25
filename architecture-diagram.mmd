@@ -9,15 +9,18 @@ flowchart LR
             direction TB
             WEB["Web VPC · 10.12.0.0/24<br/>Debian 12 web servers<br/>Apache · iperf3"]
             WEB2["Web2 VPC · 10.13.0.0/24<br/>Debian 12 web servers<br/>Apache · iperf3"]
-            WEB <-->|VPC peering| WEB2
         end
-        OWN["Your VPCs<br/>CONSUMER_NETWORKS"]
+        OWN["Your VPCs<br/>nsi_consumer_vpc_names"]
+        NCC["NCC hub · full mesh<br/>VPC spokes"]
+        WEB <--> NCC
+        WEB2 <--> NCC
+        OWN <--> NCC
     end
 
-    subgraph NSI["NSI · created by setup-nsi.sh"]
+    subgraph NSI["NSI · managed by Terraform"]
         direction TB
         FWP["Global network firewall policy<br/>newfgt-nsi<br/>rule 10 ingress · rule 11 egress<br/>0.0.0.0/0 → apply profile group"]
-        SPG["Security profile group (org)<br/>&lt;project&gt;-ftnt-spg1<br/>+ custom intercept profile -sp1"]
+        SPG["Security profile group (project)<br/>&lt;project&gt;-ftnt-spg1<br/>+ custom intercept profile -sp1"]
         EPG["Intercept endpoint group<br/>newfgt-nsi-ftnt-epg"]
         DG["Intercept deployment group<br/>newfgt-nsi-ftnt-dg"]
         DEP["Intercept deployments<br/>fgt-nsi-&lt;zone&gt; · one per zone"]
@@ -50,7 +53,7 @@ flowchart LR
     ADMIN(["Admin"])
     FORTICARE(["FortiCare / FortiGuard<br/>FortiFlex licensing"])
 
-    %% Associations made per VPC by setup-nsi.sh
+    %% Associations managed per consumer VPC by Terraform
     FWP -. "policy association" .-> CONSUMER
     EPG -. "endpoint group association" .-> CONSUMER
     DEP -->|references| FR

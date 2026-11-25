@@ -1,10 +1,3 @@
-locals {
-  # The NSI consumer-side commands need a workload VPC to attach to. That is the
-  # demo web VPC when it is deployed; otherwise the user supplies their own.
-  workload_vpc_name  = var.deploy_web_servers ? google_compute_network.vpc_networks["web"].name : "<your-workload-vpc>"
-  workload_vpc_label = var.deploy_web_servers ? "web VPC" : "your workload VPC"
-}
-
 # Network Outputs
 output "vpc_networks" {
   description = "Created VPC networks"
@@ -17,8 +10,7 @@ output "vpc_networks" {
       id   = google_compute_network.vpc_networks["management"].id
       name = google_compute_network.vpc_networks["management"].name
     }
-    # null when deploy_web_servers = false; setup-nsi.sh relies on that to skip
-    # the web VPC associations.
+    # null when deploy_web_servers = false.
     web_vpc = var.deploy_web_servers ? {
       id   = google_compute_network.vpc_networks["web"].id
       name = google_compute_network.vpc_networks["web"].name
@@ -27,6 +19,45 @@ output "vpc_networks" {
       id   = google_compute_network.vpc_networks["web2"].id
       name = google_compute_network.vpc_networks["web2"].name
     } : null
+  }
+}
+
+output "ncc_hub" {
+  description = "Full mesh NCC hub, or null when no workload VPCs are configured"
+  value = try({
+    id   = google_network_connectivity_hub.web_mesh[0].id
+    name = google_network_connectivity_hub.web_mesh[0].name
+  }, null)
+}
+
+output "ncc_spokes" {
+  description = "NCC VPC spokes connecting the workload networks"
+  value = {
+    for key, spoke in google_network_connectivity_spoke.workload_vpcs :
+    key => {
+      id      = spoke.id
+      name    = spoke.name
+      network = local.ncc_spoke_networks[key]
+    }
+  }
+}
+
+output "nsi_resources" {
+  description = "Terraform-managed NSI resources and workload VPC associations"
+  value = {
+    deployment_group = google_network_security_intercept_deployment_group.fortigate.id
+    deployments      = { for zone, deployment in google_network_security_intercept_deployment.fortigate : zone => deployment.id }
+    endpoint_group   = google_network_security_intercept_endpoint_group.fortigate.id
+    security_profile = google_network_security_security_profile.fortigate.id
+    profile_group    = google_network_security_security_profile_group.fortigate.id
+    firewall_policy  = google_compute_network_firewall_policy.fortigate.id
+    consumers = {
+      for name, association in google_network_security_intercept_endpoint_group_association.consumers :
+      name => {
+        endpoint_association = association.id
+        policy_association   = google_compute_network_firewall_policy_association.consumers[name].id
+      }
+    }
   }
 }
 
@@ -184,7 +215,7 @@ output "web_servers" {
 
 # Web2 servers output
 output "web2_servers" {
-  description = "Web2 server instances for testing VPC peering and NSI"
+  description = "Web2 server instances for testing NCC connectivity and NSI"
   value = {
     for k, v in google_compute_instance.web2_servers : k => {
       id          = v.id
@@ -193,87 +224,4 @@ output "web2_servers" {
       external_ip = length(v.network_interface[0].access_config) > 0 ? v.network_interface[0].access_config[0].nat_ip : null
     }
   }
-}
-
-# NSI deployment instructions
-output "nsi_deployment_instructions" {
-  description = "Instructions and commands for completing NSI setup"
-  value       = <<-EOT
-    
-    After Terraform deployment is complete, run the following gcloud commands to enable NSI:
-    
-    1. Create the intercept deployment group:
-    gcloud beta network-security intercept-deployment-groups create newfgt-nsi-ftnt-dg \
-      --location global \
-      --project ${var.project_id} \
-      --network ${google_compute_network.vpc_networks["inspection"].name} \
-      --no-async
-    
-    2. Create intercept deployments for each zone:
-    ${join("\n    \n    ", [for zone in var.zones : "gcloud beta network-security intercept-deployments create fgt-nsi-${replace(zone, "-", "")} \\\n      --location=${zone} \\\n      --project=${var.project_id} \\\n      --forwarding-rule=${google_compute_forwarding_rule.fortigate_forwarding_rules[zone].name} \\\n      --intercept-deployment-group=projects/${var.project_id}/locations/global/interceptDeploymentGroups/newfgt-nsi-ftnt-dg \\\n      --forwarding-rule-location=${var.region} \\\n      --no-async"])}
-    
-    3. Create intercept endpoint group:
-    gcloud beta network-security intercept-endpoint-groups create newfgt-nsi-ftnt-epg \
-      --intercept-deployment-group newfgt-nsi-ftnt-dg \
-      --project ${var.project_id} \
-      --location global \
-      --no-async
-    
-    4. Associate endpoint group with ${local.workload_vpc_label}:
-    gcloud beta network-security intercept-endpoint-group-associations create new-fgt-nsi-ftnt-epg-assoc \
-      --intercept-endpoint-group newfgt-nsi-ftnt-epg \
-      --network ${local.workload_vpc_name} \
-      --project ${var.project_id} \
-      --location global \
-      --no-async
-    
-    5. Create security profile:
-    gcloud beta network-security security-profiles custom-intercept create ${local.security_profile} \
-      --intercept-endpoint-group newfgt-nsi-ftnt-epg \
-      --billing-project ${var.project_id} \
-      --organization ${var.organization_id} \
-      --location global
-    
-    6. Create security profile group:
-    gcloud beta network-security security-profile-groups create ${local.security_profile_group} \
-      --custom-intercept-profile ${local.security_profile} \
-      --billing-project ${var.project_id} \
-      --organization ${var.organization_id} \
-      --location global
-    
-    7. Create firewall policy:
-    gcloud compute network-firewall-policies create newfgt-nsi \
-      --project ${var.project_id} \
-      --global
-    
-    8. Create firewall policy rules:
-    gcloud beta compute network-firewall-policies rules create 10 \
-      --action=APPLY_SECURITY_PROFILE_GROUP \
-      --firewall-policy newfgt-nsi \
-      --global-firewall-policy \
-      --security-profile-group ${local.security_profile_group_uri} \
-      --layer4-configs all \
-      --src-ip-ranges 0.0.0.0/0 \
-      --dest-ip-ranges 0.0.0.0/0 \
-      --direction INGRESS
-    
-    gcloud beta compute network-firewall-policies rules create 11 \
-      --action=APPLY_SECURITY_PROFILE_GROUP \
-      --firewall-policy newfgt-nsi \
-      --global-firewall-policy \
-      --security-profile-group ${local.security_profile_group_uri} \
-      --layer4-configs all \
-      --src-ip-ranges 0.0.0.0/0 \
-      --dest-ip-ranges 0.0.0.0/0 \
-      --direction EGRESS
-    
-    9. Associate policy with ${local.workload_vpc_label}:
-    gcloud compute network-firewall-policies associations create \
-      --name newfgt-nsi-policy-assoc \
-      --global-firewall-policy \
-      --firewall-policy newfgt-nsi \
-      --network ${local.workload_vpc_name} \
-      --project ${var.project_id}
-    
-    EOT
 }
